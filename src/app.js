@@ -118,17 +118,26 @@ async function syncOrderToServer(o){
  if(!res.ok){setSyncStatus("warn","Cambio pendiente de sincronizar");return false}
  setSyncStatus("on","Sincronizado");return true
 }
-let activityLastId=Number(localStorage.getItem("activityLastId")||0);
+let activityLastId=Number(localStorage.getItem("activityLastId")||0),draftActivities=new Map();
+function renderDraftActivities(){
+ const box=document.getElementById("ordersList");if(!box)return;
+ const drafts=[...draftActivities.values()].filter(a=>!Number(a.confirmado));
+ if(!drafts.length)return;
+ const html=drafts.map(a=>`<div class="order" style="border:2px solid #f0b429;background:#fffaf0"><div class="row between wrap"><div><b>🟡 PEDIDO EN PROCESO</b><div class="smalltxt">${escapeHtml((a.cliente||"Cliente").trim()||"Cliente")}</div></div><span class="status warn">ARMANDO PEDIDO…</span></div><div class="muted" style="margin-top:8px">El cliente todavía no confirma el pedido.</div></div>`).join("");
+ box.insertAdjacentHTML("afterbegin",html)
+}
 async function pullOrderActivity(){
  if(!syncConfigured())return;
  const res=await apiCall("/api/desktop/activity?after="+activityLastId);
  if(!res.ok||!Array.isArray(res.data))return;
  for(const a of res.data){
+  const isNew=!draftActivities.has(a.token)&&Number(a.id)>activityLastId;
   activityLastId=Math.max(activityLastId,Number(a.id)||0);
-  const who=(a.cliente||"Cliente").trim()||"Cliente";
-  await window.desktopAPI.notify("🟡 Cliente preparando pedido",who+" está armando un pedido en la web.");
+  if(Number(a.confirmado))draftActivities.delete(a.token);else draftActivities.set(a.token,a);
+  if(isNew){const who=(a.cliente||"Cliente").trim()||"Cliente";await window.desktopAPI.notify("🟡 Cliente preparando pedido",who+" está armando un pedido en la web.")}
  }
  localStorage.setItem("activityLastId",String(activityLastId));
+ renderOrders();renderDraftActivities();
 }
 let syncBusy=false;
 async function syncNow(showFeedback=false){if(syncBusy)return false;if(!syncConfigured()){setSyncStatus("off","Configura la sincronización");if(showFeedback)alert("Ingresa la URL de Render y la clave de sincronización.");return false}syncBusy=true;try{const ok=await pullRemoteOrders(showFeedback);if(ok)await pushProducts(false);return ok}finally{syncBusy=false}}
