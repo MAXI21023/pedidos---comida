@@ -1,6 +1,6 @@
 {
   "name": "gestor-pedidos-whatsapp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Gestor de pedidos, costos, pagos, entregas y rentabilidad para local de comida",
   "main": "main.js",
   "author": "Gestor de Pedidos",
@@ -29,7 +29,10 @@
     ],
     "mac": {
       "category": "public.app-category.business",
-      "target": ["dmg", "zip"],
+      "target": [
+        "dmg",
+        "zip"
+      ],
       "hardenedRuntime": false,
       "gatekeeperAssess": false
     },
