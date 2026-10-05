@@ -18,14 +18,22 @@ function readData() {
     if (!fs.existsSync(file)) return defaultData();
     return JSON.parse(fs.readFileSync(file, 'utf8'));
   } catch (e) {
+    try {
+      const backup=dataFile()+'.bak';
+      if(fs.existsSync(backup)) return JSON.parse(fs.readFileSync(backup,'utf8'));
+    } catch {}
     return defaultData();
   }
 }
 
 function writeData(data) {
-  fs.mkdirSync(path.dirname(dataFile()), { recursive: true });
-  fs.writeFileSync(dataFile(), JSON.stringify(data, null, 2), 'utf8');
-  return true;
+  const file=dataFile(),dir=path.dirname(file),tmp=file+'.tmp',backup=file+'.bak';
+  fs.mkdirSync(dir,{recursive:true});
+  const json=JSON.stringify(data,null,2);
+  fs.writeFileSync(tmp,json,'utf8');
+  if(fs.existsSync(file)){try{fs.copyFileSync(file,backup)}catch{}}
+  fs.renameSync(tmp,file);
+  return {ok:true,file};
 }
 
 function createWindow() {
@@ -53,6 +61,7 @@ function createWindow() {
   });
 }
 
+app.on('before-quit',()=>{try{if(mainWindow&&!mainWindow.isDestroyed())mainWindow.webContents.send('app:save-before-quit')}catch{}});
 app.whenReady().then(() => {
   ipcMain.handle('data:get', () => readData());
   ipcMain.handle('external:open', async (_event, url) => { try { const u=new URL(String(url)); if(u.hostname!=='wa.me'&&u.hostname!=='api.whatsapp.com') return {ok:false}; await shell.openExternal(u.toString()); return {ok:true}; } catch { return {ok:false}; } });
