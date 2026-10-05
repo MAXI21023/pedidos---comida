@@ -32,8 +32,11 @@ def init_db():
   cliente TEXT DEFAULT '',
   telefono TEXT DEFAULT '',
   evento TEXT DEFAULT 'started',
-  fecha TEXT NOT NULL
+  fecha TEXT NOT NULL,
+  confirmado INTEGER DEFAULT 0
  )''')
+ cols_act={r['name'] for r in c.execute("PRAGMA table_info(pedido_actividad)").fetchall()}
+ if 'confirmado' not in cols_act: c.execute("ALTER TABLE pedido_actividad ADD COLUMN confirmado INTEGER DEFAULT 0")
  c.execute('''CREATE TABLE IF NOT EXISTS pedido_items(
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   pedido_id INTEGER NOT NULL,
@@ -88,7 +91,7 @@ def order_activity():
 def desktop_activity():
  try: after=max(0,int(request.args.get('after',0)))
  except: after=0
- c=db(); rows=c.execute('SELECT id,token,cliente,telefono,evento,fecha FROM pedido_actividad WHERE id>? ORDER BY id ASC LIMIT 50',(after,)).fetchall(); c.close()
+ c=db(); rows=c.execute('SELECT id,token,cliente,telefono,evento,fecha,confirmado FROM pedido_actividad WHERE id>? OR confirmado=0 ORDER BY id ASC LIMIT 50',(after,)).fetchall(); c.close()
  return jsonify([dict(r) for r in rows])
 
 @app.post('/ordenar')
@@ -104,10 +107,11 @@ def ordenar():
    total += q*p['precio']
  if not items:
   c.close(); flash('Selecciona al menos un producto.'); return redirect(url_for('menu'))
- cliente=request.form.get('cliente','').strip(); telefono=request.form.get('telefono','').strip(); entrega=request.form.get('entrega','Retiro'); direccion=request.form.get('direccion','').strip(); pago=request.form.get('pago','Efectivo'); notas=request.form.get('notas','').strip()
+ cliente=request.form.get('cliente','').strip(); telefono=request.form.get('telefono','').strip(); activity_token=request.form.get('activity_token','').strip()[:80]; entrega=request.form.get('entrega','Retiro'); direccion=request.form.get('direccion','').strip(); pago=request.form.get('pago','Efectivo'); notas=request.form.get('notas','').strip()
  cur=c.execute('INSERT INTO pedidos(cliente,telefono,direccion,entrega,pago,detalle,total,fecha,notas) VALUES(?,?,?,?,?,?,?,?,?)',(cliente,telefono,direccion,entrega,pago,' | '.join(items),total,datetime.now().isoformat(timespec='seconds'),notas))
  oid=cur.lastrowid
  c.executemany('INSERT INTO pedido_items(pedido_id,producto_id,nombre,tipo,cantidad,precio,costo) VALUES(?,?,?,?,?,?,?)',[(oid,*x) for x in structured])
+ if activity_token: c.execute('UPDATE pedido_actividad SET confirmado=1 WHERE token=?',(activity_token,))
  c.commit(); c.close()
  return render_template('confirmacion.html',pedido=oid,total=total,cliente=cliente)
 
