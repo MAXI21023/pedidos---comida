@@ -184,6 +184,18 @@ def desktop_update_order(i):
  c.commit(); c.close()
  return jsonify({'ok':True,'id':i})
 
+@app.delete('/api/desktop/orders/<int:i>')
+@api_required
+def desktop_delete_order(i):
+ c=db()
+ row=c.execute('SELECT id FROM pedidos WHERE id=?',(i,)).fetchone()
+ if not row:
+  c.close(); return jsonify({'error':'Pedido no encontrado'}),404
+ c.execute('DELETE FROM pedido_items WHERE pedido_id=?',(i,))
+ c.execute('DELETE FROM pedidos WHERE id=?',(i,))
+ c.commit(); c.close()
+ return jsonify({'ok':True,'id':i})
+
 @app.post('/api/desktop/products')
 @api_required
 def desktop_products():
