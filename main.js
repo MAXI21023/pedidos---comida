@@ -82,6 +82,20 @@ app.whenReady().then(() => {
       return { ok: false, status: 0, error: error?.message || 'No se pudo conectar con el servidor.' };
     }
   });
+  ipcMain.handle('print:voucher', async (_event, html) => {
+    const win = new BrowserWindow({ show: false, width: 420, height: 700, webPreferences: { sandbox: true } });
+    try {
+      await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(String(html || '')));
+      const printers = await win.webContents.getPrintersAsync();
+      const thermal = printers.find(p => /thermal|pos|receipt|ticket|80mm/i.test((p.name || '') + ' ' + (p.displayName || '')));
+      const options = { silent: Boolean(thermal), printBackground: true, margins: { marginType: 'none' } };
+      if (thermal) options.deviceName = thermal.name;
+      const ok = await new Promise(resolve => win.webContents.print(options, success => resolve(success)));
+      return { ok, printer: thermal ? thermal.name : null, dialog: !thermal };
+    } finally {
+      if (!win.isDestroyed()) win.close();
+    }
+  });
   ipcMain.handle('notify', (_event, { title, body }) => {
     if (Notification.isSupported()) new Notification({ title, body }).show();
     return true;
