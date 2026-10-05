@@ -50,18 +50,19 @@ async function saveOrder(showAlert=true){if(!cart.length){alert("Agrega al menos
 async function saveAndWhatsApp(){const o=await saveOrder(false);if(!o)return;openWhatsApp(o);alert("Pedido #"+o.number+" registrado y preparado para WhatsApp.")}
 function orderMessage(o){return `🍔 *PEDIDO #${o.number}*\nCliente: ${o.client}\n\n${o.items.map(x=>`${x.qty} x ${x.name} — ${money(x.price*x.qty)}`).join("\n")}\n\n*TOTAL: ${money(o.total)}*\nEntrega: ${o.delivery}\nPago: ${o.payment}${o.address?`\nDirección: ${o.address}`:""}${o.notes?`\nObservaciones: ${o.notes}`:""}\n\n${state.settings.thanksMessage||"¡Gracias por tu pedido!"}`}
 function openWhatsApp(o){const phone=(o.phone||"").replace(/\D/g,"");const url=phone?`https://wa.me/${phone}?text=${encodeURIComponent(orderMessage(o))}`:`https://wa.me/?text=${encodeURIComponent(orderMessage(o))}`;window.open(url,"_blank")}
-async function setOrderStatus(id,val){const o=state.orders.find(x=>x.id===id);if(!o)return;o.status=val;o.statusChangedAt=Date.now();if(val==="Entregado"){o.delivered=true;o.deliveredAt=new Date().toISOString()}await persist();renderOrders();renderBadges();renderStats();const synced=await syncOrderToServer(o);if(!synced&&o.remoteId){setSyncStatus("warn","Estado guardado localmente · pendiente de servidor");return}if(["Confirmado","Preparando","Listo"].includes(val)){const title=val==="Confirmado"?"Pedido confirmado":val==="Listo"?"Pedido listo":"Pedido en preparación";await window.desktopAPI.notify(title,`Pedido #${o.number} · ${o.client}`);await openWhatsAppById(id)}}
+async function setOrderStatus(id,val){const o=state.orders.find(x=>x.id===id);if(!o)return;o.status=val;o.statusChangedAt=Date.now();if(val==="Entregado"){o.delivered=true;o.deliveredAt=new Date().toISOString()}await persist();renderOrders();renderBadges();renderStats();const synced=await syncOrderToServer(o);if(!synced&&o.remoteId){setSyncStatus("warn","Estado guardado localmente · pendiente de servidor");return}if(["Confirmado","Preparando","Listo","En reparto"].includes(val)){const title=val==="Confirmado"?"Pedido confirmado":val==="Listo"?"Pedido listo":val==="En reparto"?"Pedido en reparto":"Pedido en preparación";await window.desktopAPI.notify(title,`Pedido #${o.number} · ${o.client}`);await openWhatsAppById(id)}}
 async function setPaid(id,val){const o=state.orders.find(x=>x.id===id);if(!o)return;o.paid=val==="true";o.paidAt=o.paid?new Date().toISOString():null;await persist();renderOrders();renderBadges();renderStats();if(o.paid)await window.desktopAPI.notify("Pedido pagado",`Pedido #${o.number} · ${o.client} · ${money(o.total)}`);await syncOrderToServer(o)}
 async function setDelivered(id,val){const o=state.orders.find(x=>x.id===id);if(!o)return;o.delivered=val==="true";o.deliveredAt=o.delivered?new Date().toISOString():null;if(o.delivered)o.status="Entregado";await persist();renderOrders();renderBadges();renderStats();if(o.delivered)await window.desktopAPI.notify("Pedido entregado",`Pedido #${o.number} · ${o.client}`);await syncOrderToServer(o)}
 async function deleteOrder(id){const o=state.orders.find(x=>x.id===id);if(!o||!confirm("¿Eliminar este pedido?"))return;state.orders=state.orders.filter(x=>x.id!==id);await persist();renderOrders();renderBadges();renderStats()}
 function orderFilterPass(o){const f=document.getElementById("orderFilter")?.value||"all";if(f==="unpaid")return !o.paid;if(f==="undelivered")return !o.delivered;if(f==="today")return(o.createdAt||"").slice(0,10)===todayISO();return true}
-function renderOrders(){const list=state.orders.filter(orderFilterPass);document.getElementById("ordersList").innerHTML=list.length?list.map(o=>{const cost=o.cost??o.items.reduce((a,x)=>a+(x.cost||0)*x.qty,0),profit=o.total-cost,margin=calcMargin(o.total,cost);return `<div class="order ${o.paid?"paid":"unpaid"}"><div class="row between wrap"><div><b>#${o.number} · ${escapeHtml(o.client)}</b><div class="smalltxt">${escapeHtml(o.date||"")}</div></div><div class="row wrap"><span class="status ${o.paid?"ok":"bad"}">${o.paid?"PAGADO":"PAGO PENDIENTE"}</span><span class="status ${o.delivered?"ok":"warn"}">${o.delivered?"ENTREGADO":"POR ENTREGAR"}</span></div></div><div class="muted" style="margin:8px 0">${o.items.map(x=>x.qty+"× "+escapeHtml(x.name)).join(" · ")}</div><div class="row between wrap"><b>${money(o.total)}</b><span class="smalltxt">Costo ${money(cost)} · Utilidad ${money(profit)} · Margen ${margin.toFixed(1)}%</span></div><div class="two" style="margin-top:9px"><select class="paid-select" data-id="${o.id}"><option value="false" ${!o.paid?"selected":""}>💳 Pago pendiente</option><option value="true" ${o.paid?"selected":""}>💰 Pagado</option></select><select class="delivered-select" data-id="${o.id}"><option value="false" ${!o.delivered?"selected":""}>🛵 Entrega pendiente</option><option value="true" ${o.delivered?"selected":""}>✅ Entregado</option></select></div><div class="row wrap" style="margin-top:9px"><select style="flex:1" class="order-status-select" data-id="${o.id}">${["Nuevo","Confirmado","Preparando","Listo","Entregado"].map(s=>`<option ${s===o.status?"selected":""}>${s}</option>`).join("")}</select><button class="secondary voucher-btn" data-id="${o.id}">🖨️ Voucher</button><button class="success whatsapp-btn" data-id="${o.id}">💬 Avisar cliente</button><button class="danger delete-order-btn" data-id="${o.id}">Eliminar</button></div></div>`}).join("") :'<div class="muted">No hay pedidos para mostrar.</div>';bindOrderActionButtons()}
+function renderOrders(){const list=state.orders.filter(orderFilterPass);document.getElementById("ordersList").innerHTML=list.length?list.map(o=>{const cost=o.cost??o.items.reduce((a,x)=>a+(x.cost||0)*x.qty,0),profit=o.total-cost,margin=calcMargin(o.total,cost);return `<div class="order ${o.paid?"paid":"unpaid"}"><div class="row between wrap"><div><b>#${o.number} · ${escapeHtml(o.client)}</b><div class="smalltxt">${escapeHtml(o.date||"")}</div></div><div class="row wrap"><span class="status ${o.paid?"ok":"bad"}">${o.paid?"PAGADO":"PAGO PENDIENTE"}</span><span class="status ${o.delivered?"ok":"warn"}">${o.delivered?"ENTREGADO":"POR ENTREGAR"}</span></div></div><div class="muted" style="margin:8px 0">${o.items.map(x=>x.qty+"× "+escapeHtml(x.name)).join(" · ")}</div><div class="row between wrap"><b>${money(o.total)}</b><span class="smalltxt">Costo ${money(cost)} · Utilidad ${money(profit)} · Margen ${margin.toFixed(1)}%</span></div><div class="two" style="margin-top:9px"><select class="paid-select" data-id="${o.id}"><option value="false" ${!o.paid?"selected":""}>💳 Pago pendiente</option><option value="true" ${o.paid?"selected":""}>💰 Pagado</option></select><select class="delivered-select" data-id="${o.id}"><option value="false" ${!o.delivered?"selected":""}>🛵 Entrega pendiente</option><option value="true" ${o.delivered?"selected":""}>✅ Entregado</option></select></div><div class="row wrap" style="margin-top:9px"><select style="flex:1" class="order-status-select" data-id="${o.id}">${["Nuevo","Confirmado","Preparando","Listo","En reparto","Entregado"].map(s=>`<option ${s===o.status?"selected":""}>${s}</option>`).join("")}</select><button class="secondary voucher-btn" data-id="${o.id}">🖨️ Voucher</button><button class="success whatsapp-btn" data-id="${o.id}">💬 Avisar cliente</button><button class="danger delete-order-btn" data-id="${o.id}">Eliminar</button></div></div>`}).join("") :'<div class="muted">No hay pedidos para mostrar.</div>';bindOrderActionButtons()}
 function bindOrderActionButtons(){document.querySelectorAll(".voucher-btn").forEach(b=>b.addEventListener("click",()=>printVoucher(b.dataset.id)));document.querySelectorAll(".whatsapp-btn").forEach(b=>b.addEventListener("click",()=>openWhatsAppById(b.dataset.id)));document.querySelectorAll(".order-status-select").forEach(x=>x.addEventListener("change",()=>setOrderStatus(x.dataset.id,x.value)));document.querySelectorAll(".paid-select").forEach(x=>x.addEventListener("change",()=>setPaid(x.dataset.id,x.value)));document.querySelectorAll(".delivered-select").forEach(x=>x.addEventListener("change",()=>setDelivered(x.dataset.id,x.value)));document.querySelectorAll(".delete-order-btn").forEach(b=>b.addEventListener("click",()=>deleteOrder(b.dataset.id)))}
 function statusMessage(o){
  if(o.status==="Confirmado")return `✅ Hola ${o.client}, confirmamos tu pedido #${o.number}. Ya fue recibido por nuestro equipo y comenzaremos a prepararlo.`;
  if(o.status==="Preparando")return `🍔 Hola ${o.client}, tu pedido #${o.number} ya está siendo preparado.`;
  if(o.status==="Listo"&&String(o.delivery||"").toLowerCase().includes("delivery"))return `🛵 Hola ${o.client}, tu pedido #${o.number} está listo y comienza el reparto. ¡Va en camino!`;
  if(o.status==="Listo")return `✅ Hola ${o.client}, tu pedido #${o.number} está listo. Ya puedes venir a retirarlo.`;
+ if(o.status==="En reparto")return `🛵 Hola ${o.client}, tu pedido #${o.number} está en reparto y va en camino. ¡Nos vemos pronto!`;
  if(o.status==="Entregado")return `✅ Hola ${o.client}, tu pedido #${o.number} fue entregado. ¡Muchas gracias!`;
  return orderMessage(o)
 }
@@ -120,10 +121,23 @@ async function syncOrderToServer(o){
  setSyncStatus("on","Sincronizado");return true
 }
 let activityLastId=Number(localStorage.getItem("activityLastId")||0),draftActivities=new Map();
+function activeDrafts(){
+ const now=Date.now(),byCustomer=new Map();
+ for(const a of draftActivities.values()){
+  const confirmed=a.confirmado===true||a.confirmado===1||a.confirmado==="1"||a.confirmado==="true";
+  if(confirmed)continue;
+  const ap=String(a.telefono||"").replace(/\\D/g,""),name=String(a.cliente||"").trim().toLowerCase();
+  const ordered=state.orders.some(o=>{const op=String(o.phone||"").replace(/\\D/g,"");return (ap&&op===ap)||(name&&String(o.client||"").trim().toLowerCase()===name)});
+  if(ordered)continue;
+  const t=Date.parse(a.fecha||"")||now;if(now-t>10*60*1000)continue;
+  const key=ap||name||a.token,prev=byCustomer.get(key);
+  if(!prev||Number(a.id)>Number(prev.id))byCustomer.set(key,a);
+ }
+ return [...byCustomer.values()]
+}
 function renderDraftActivities(){
  const box=document.getElementById("ordersList");if(!box)return;
- const drafts=[...draftActivities.values()].filter(a=>!Number(a.confirmado));
- if(!drafts.length)return;
+ const drafts=activeDrafts();if(!drafts.length)return;
  const html=drafts.map(a=>`<div class="order" style="border:2px solid #f0b429;background:#fffaf0"><div class="row between wrap"><div><b>🟡 PEDIDO EN PROCESO</b><div class="smalltxt">${escapeHtml((a.cliente||"Cliente").trim()||"Cliente")}</div></div><span class="status warn">ARMANDO PEDIDO…</span></div><div class="muted" style="margin-top:8px">El cliente todavía no confirma el pedido.</div></div>`).join("");
  box.insertAdjacentHTML("afterbegin",html)
 }
@@ -132,14 +146,13 @@ async function pullOrderActivity(){
  const res=await apiCall("/api/desktop/activity?after="+activityLastId);
  if(!res.ok||!Array.isArray(res.data))return;
  for(const a of res.data){
-  const ap=String(a.telefono||"").replace(/\\D/g,"");
-  const ordered=state.orders.some(o=>ap&&String(o.phone||"").replace(/\\D/g,"")===ap);
-  if(ordered){draftActivities.delete(a.token);continue}
   const isNew=!draftActivities.has(a.token)&&Number(a.id)>activityLastId;
   activityLastId=Math.max(activityLastId,Number(a.id)||0);
-  const confirmed=a.confirmado===true||a.confirmado===1||a.confirmado==="1"||a.confirmado==="true";if(confirmed)draftActivities.delete(a.token);else draftActivities.set(a.token,a);
-  if(isNew){const who=(a.cliente||"Cliente").trim()||"Cliente";await window.desktopAPI.notify("🟡 Cliente preparando pedido",who+" está armando un pedido en la web.")}
+  const confirmed=a.confirmado===true||a.confirmado===1||a.confirmado==="1"||a.confirmado==="true";
+  if(confirmed)draftActivities.delete(a.token);else draftActivities.set(a.token,a);
+  if(isNew&&!confirmed){const who=(a.cliente||"Cliente").trim()||"Cliente";await window.desktopAPI.notify("🟡 Cliente preparando pedido",who+" está armando un pedido en la web.")}
  }
+ for(const [token,a] of draftActivities){if(!activeDrafts().some(x=>x.token===token))draftActivities.delete(token)}
  localStorage.setItem("activityLastId",String(activityLastId));
  renderOrders();renderDraftActivities();
 }
