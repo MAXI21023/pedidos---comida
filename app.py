@@ -108,6 +108,9 @@ def ordenar():
  if not items:
   c.close(); flash('Selecciona al menos un producto.'); return redirect(url_for('menu'))
  cliente=request.form.get('cliente','').strip(); telefono=request.form.get('telefono','').strip(); activity_token=request.form.get('activity_token','').strip()[:80]; entrega=request.form.get('entrega','Retiro'); direccion=request.form.get('direccion','').strip(); pago=request.form.get('pago','Efectivo'); notas=request.form.get('notas','').strip()
+ if entrega.startswith('Delivery'):
+  entrega='Delivery'
+  total += 2000
  cur=c.execute('INSERT INTO pedidos(cliente,telefono,direccion,entrega,pago,detalle,total,fecha,notas) VALUES(?,?,?,?,?,?,?,?,?)',(cliente,telefono,direccion,entrega,pago,' | '.join(items),total,datetime.now().isoformat(timespec='seconds'),notas))
  oid=cur.lastrowid
  c.executemany('INSERT INTO pedido_items(pedido_id,producto_id,nombre,tipo,cantidad,precio,costo) VALUES(?,?,?,?,?,?,?)',[(oid,*x) for x in structured])
