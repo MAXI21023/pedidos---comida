@@ -134,6 +134,9 @@ async function pullOrderActivity(){
  const res=await apiCall("/api/desktop/activity?after="+activityLastId);
  if(!res.ok||!Array.isArray(res.data))return;
  for(const a of res.data){
+  const ap=String(a.telefono||"").replace(/\\D/g,"");
+  const ordered=state.orders.some(o=>ap&&String(o.phone||"").replace(/\\D/g,"")===ap);
+  if(ordered){draftActivities.delete(a.token);continue}
   const isNew=!draftActivities.has(a.token)&&Number(a.id)>activityLastId;
   activityLastId=Math.max(activityLastId,Number(a.id)||0);
   const confirmed=a.confirmado===true||a.confirmado===1||a.confirmado==="1"||a.confirmado==="true";if(confirmed)draftActivities.delete(a.token);else draftActivities.set(a.token,a);
