@@ -104,6 +104,10 @@
 
   <section id="admin" class="hidden">
     <div class="card">
+      <div class="row between wrap"><div><h2>Inventario de ingredientes</h2><div class="muted">Registra una vez el formato y precio de compra. Las recetas usarán estos valores para calcular el costo real.</div></div><button class="primary" onclick="addInventoryIngredient()">+ Ingrediente</button></div>
+      <div class="tablewrap"><table class="table"><thead><tr><th>Ingrediente</th><th>Cantidad compra</th><th>Unidad</th><th>Precio compra</th><th>Costo unitario</th><th>Acciones</th></tr></thead><tbody id="inventoryRows"></tbody></table></div>
+    </div>
+    <div class="card">
       <div class="row between wrap">
         <div><h2>Administrar menú</h2><div class="muted">Los costos y márgenes son solo información interna.</div></div>
         <button class="primary" onclick="openProductModal()">+ Nuevo producto</button>
