@@ -65,16 +65,21 @@ def menu():
 @app.post('/ordenar')
 def ordenar():
  c=db(); productos=c.execute('SELECT * FROM productos WHERE activo=1').fetchall(); mapa={str(p['id']):p for p in productos}
- items=[]; total=0
+ items=[]; structured=[]; total=0
  for pid,p in mapa.items():
   try:q=max(0,int(request.form.get('q_'+pid,0)))
   except:q=0
-  if q: items.append(f"{q} x {p['nombre']} ({money(p['precio'])} c/u)"); total += q*p['precio']
+  if q:
+   items.append(f"{q} x {p['nombre']} ({money(p['precio'])} c/u)")
+   structured.append((p['id'],p['nombre'],p['tipo'],q,p['precio'],p['costo']))
+   total += q*p['precio']
  if not items:
   c.close(); flash('Selecciona al menos un producto.'); return redirect(url_for('menu'))
- cliente=request.form.get('cliente','').strip(); telefono=request.form.get('telefono','').strip(); entrega=request.form.get('entrega','Retiro'); direccion=request.form.get('direccion','').strip(); pago=request.form.get('pago','Efectivo')
- cur=c.execute('INSERT INTO pedidos(cliente,telefono,direccion,entrega,pago,detalle,total,fecha) VALUES(?,?,?,?,?,?,?,?)',(cliente,telefono,direccion,entrega,pago,' | '.join(items),total,datetime.now().isoformat(timespec='seconds')))
- oid=cur.lastrowid; c.commit(); c.close()
+ cliente=request.form.get('cliente','').strip(); telefono=request.form.get('telefono','').strip(); entrega=request.form.get('entrega','Retiro'); direccion=request.form.get('direccion','').strip(); pago=request.form.get('pago','Efectivo'); notas=request.form.get('notas','').strip()
+ cur=c.execute('INSERT INTO pedidos(cliente,telefono,direccion,entrega,pago,detalle,total,fecha,notas) VALUES(?,?,?,?,?,?,?,?,?)',(cliente,telefono,direccion,entrega,pago,' | '.join(items),total,datetime.now().isoformat(timespec='seconds'),notas))
+ oid=cur.lastrowid
+ c.executemany('INSERT INTO pedido_items(pedido_id,producto_id,nombre,tipo,cantidad,precio,costo) VALUES(?,?,?,?,?,?,?)',[(oid,*x) for x in structured])
+ c.commit(); c.close()
  return render_template('confirmacion.html',pedido=oid,total=total,cliente=cliente)
 
 @app.route('/admin/login',methods=['GET','POST'])
