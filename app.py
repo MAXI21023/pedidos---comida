@@ -159,7 +159,7 @@ def desktop_products():
  if not isinstance(products,list):
   return jsonify({'error':'Formato de productos no válido'}),400
  c=db()
- c.execute('UPDATE productos SET activo=0 WHERE desktop_id IS NOT NULL')
+ c.execute('UPDATE productos SET activo=0')
  for p in products:
   did=str(p.get('id','')).strip()
   name=str(p.get('name','')).strip()
