@@ -55,6 +55,7 @@ function createWindow() {
 
 app.whenReady().then(() => {
   ipcMain.handle('data:get', () => readData());
+  ipcMain.handle('external:open', async (_event, url) => { try { const u=new URL(String(url)); if(u.hostname!=='wa.me'&&u.hostname!=='api.whatsapp.com') return {ok:false}; await shell.openExternal(u.toString()); return {ok:true}; } catch { return {ok:false}; } });
   ipcMain.handle('data:set', (_event, data) => writeData(data));
   ipcMain.handle('server:request', async (_event, request = {}) => {
     try {
