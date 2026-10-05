@@ -117,8 +117,20 @@ async function syncOrderToServer(o){
  if(!res.ok){setSyncStatus("warn","Cambio pendiente de sincronizar");return false}
  setSyncStatus("on","Sincronizado");return true
 }
+let activityLastId=Number(localStorage.getItem("activityLastId")||0);
+async function pullOrderActivity(){
+ if(!syncConfigured())return;
+ const res=await apiCall("/api/desktop/activity?after="+activityLastId);
+ if(!res.ok||!Array.isArray(res.data))return;
+ for(const a of res.data){
+  activityLastId=Math.max(activityLastId,Number(a.id)||0);
+  const who=(a.cliente||"Cliente").trim()||"Cliente";
+  await window.desktopAPI.notify("🟡 Cliente preparando pedido",who+" está armando un pedido en la web.");
+ }
+ localStorage.setItem("activityLastId",String(activityLastId));
+}
 let syncBusy=false;
 async function syncNow(showFeedback=false){if(syncBusy)return false;if(!syncConfigured()){setSyncStatus("off","Configura la sincronización");if(showFeedback)alert("Ingresa la URL de Render y la clave de sincronización.");return false}syncBusy=true;try{const ok=await pullRemoteOrders(showFeedback);if(ok)await pushProducts(false);return ok}finally{syncBusy=false}}
-function startServerSync(){if(syncConfigured()){setSyncStatus("warn","Conectando…");syncNow(false)}else setSyncStatus("off","Sin conexión");setInterval(()=>syncNow(false),10000)}
+function startServerSync(){if(syncConfigured()){setSyncStatus("warn","Conectando…");syncNow(false);pullOrderActivity()}else setSyncStatus("off","Sin conexión");setInterval(()=>syncNow(false),10000);setInterval(()=>pullOrderActivity(),2000)}
 
 init();
