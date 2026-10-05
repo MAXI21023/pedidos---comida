@@ -1,0 +1,41 @@
+{
+  "name": "gestor-pedidos-whatsapp",
+  "version": "0.1.0",
+  "description": "Gestor de pedidos, costos, pagos, entregas y rentabilidad para local de comida",
+  "main": "main.js",
+  "author": "Gestor de Pedidos",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron .",
+    "dist:mac": "electron-builder --mac dmg zip",
+    "dist:mac:arm64": "electron-builder --mac dmg zip --arm64",
+    "dist:mac:intel": "electron-builder --mac dmg zip --x64"
+  },
+  "devDependencies": {
+    "electron": "^38.2.1",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "cl.gestorpedidos.desktop",
+    "productName": "Gestor de Pedidos",
+    "asar": true,
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.business",
+      "target": ["dmg", "zip"],
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false
+    },
+    "dmg": {
+      "title": "Gestor de Pedidos ${version}",
+      "artifactName": "Gestor-de-Pedidos-${version}-${arch}.${ext}"
+    }
+  }
+}

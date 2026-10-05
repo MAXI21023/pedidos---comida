@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#111318">
+<title>Gestor de Pedidos</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header>
+  <div class="header-inner">
+    <div>
+      <div class="brand">🍔 <span id="brandName">MI HAMBURGUESERÍA</span></div>
+      <div class="muted">Pedidos · WhatsApp · Caja · Costos · Rentabilidad</div>
+    </div>
+    <div class="top-actions">
+      <span class="badge" id="unpaidBadge">💳 0 por pagar</span>
+      <span class="badge" id="deliveryBadge">🛵 0 por entregar</span>
+      <button class="secondary small" onclick="exportBackup()">Respaldar</button>
+      <button class="secondary small" onclick="importBackup()">Importar</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="nav">
+    <button class="active" onclick="goTab('new',this)">Nuevo pedido</button>
+    <button onclick="goTab('orders',this)">Pedidos</button>
+    <button onclick="goTab('cash',this)">Caja y ganancias</button>
+    <button onclick="goTab('admin',this)">Administrar menú</button>
+    <button onclick="goTab('settings',this)">Configuración</button>
+  </div>
+
+  <section id="new">
+    <div class="grid">
+      <div class="card">
+        <div class="row between wrap">
+          <div><h2>Menú</h2><div class="muted">Selecciona productos para crear el pedido.</div></div>
+          <select id="categoryFilter" class="fit" onchange="renderProducts()"></select>
+        </div>
+        <div class="products" id="products"></div>
+      </div>
+      <aside class="card sticky-card">
+        <h2>Pedido actual</h2>
+        <div id="cart"><div class="muted">Agrega productos desde el menú.</div></div>
+        <div class="total">Total: <span id="total">$0</span></div>
+        <div class="smalltxt">Costo interno: <b id="cartCost">$0</b> · Utilidad: <b id="cartProfit">$0</b> · Margen: <b id="cartMargin">0%</b></div>
+        <label>Cliente</label><input id="client" placeholder="Nombre del cliente">
+        <label>Teléfono / WhatsApp</label><input id="phone" inputmode="tel" placeholder="Ej: 56912345678">
+        <div class="two">
+          <div><label>Entrega</label><select id="delivery"><option>Retiro en local</option><option>Delivery</option></select></div>
+          <div><label>Forma de pago</label><select id="payment"><option>Efectivo</option><option>Transferencia</option><option>Débito / Crédito</option></select></div>
+        </div>
+        <label>Dirección / referencia</label><input id="address" placeholder="Completar si es delivery">
+        <label>Observaciones</label><textarea id="notes" placeholder="Sin pepinillos, extra salsa, etc."></textarea>
+        <div class="two">
+          <button class="primary full" onclick="saveOrder()">Registrar</button>
+          <button class="success full" onclick="saveAndWhatsApp()">Registrar + WhatsApp</button>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <section id="orders" class="hidden">
+    <div class="card">
+      <div class="row between wrap">
+        <div><h2>Pedidos registrados</h2><div class="muted">Control de cocina, pagos y entregas.</div></div>
+        <div class="row wrap">
+          <select id="orderFilter" class="fit" onchange="renderOrders()">
+            <option value="all">Todos</option>
+            <option value="unpaid">Pendientes de pago</option>
+            <option value="undelivered">Pendientes de entrega</option>
+            <option value="today">De hoy</option>
+          </select>
+          <button class="secondary" onclick="exportOrdersCSV()">Exportar CSV</button>
+        </div>
+      </div>
+      <div id="ordersList"></div>
+    </div>
+  </section>
+
+  <section id="cash" class="hidden">
+    <div class="card">
+      <div class="row between wrap"><div><h2>Caja y rentabilidad</h2><div class="muted">Resumen por el rango de fechas que selecciones.</div></div></div>
+      <div class="stats">
+        <div class="stat"><span>Ventas</span><b id="sales">$0</b></div>
+        <div class="stat"><span>Costos</span><b id="costs">$0</b></div>
+        <div class="stat"><span>Utilidad</span><b class="green" id="profit">$0</b></div>
+        <div class="stat"><span>Margen</span><b id="margin">0%</b></div>
+        <div class="stat"><span>Pedidos</span><b id="count">0</b></div>
+        <div class="stat"><span>Ticket promedio</span><b id="avg">$0</b></div>
+        <div class="stat"><span>Cobrado</span><b class="green" id="collected">$0</b></div>
+        <div class="stat"><span>Por cobrar</span><b class="red" id="pending">$0</b></div>
+      </div>
+      <div class="three topgap">
+        <div><label>Desde</label><input type="date" id="cashFrom" onchange="renderStats()"></div>
+        <div><label>Hasta</label><input type="date" id="cashTo" onchange="renderStats()"></div>
+        <div class="align-bottom"><button class="secondary full" onclick="clearCashDates()">Ver todo</button></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="admin" class="hidden">
+    <div class="card">
+      <div class="row between wrap">
+        <div><h2>Administrar menú</h2><div class="muted">Los costos y márgenes son solo información interna.</div></div>
+        <button class="primary" onclick="openProductModal()">+ Nuevo producto</button>
+      </div>
+      <div class="tablewrap">
+        <table class="table"><thead><tr><th>Producto</th><th>Tipo</th><th>Costo</th><th>Venta</th><th>Utilidad</th><th>Margen</th><th>Estado</th><th>Acciones</th></tr></thead><tbody id="adminRows"></tbody></table>
+      </div>
+    </div>
+  </section>
+
+  <section id="settings" class="hidden">
+    <div class="card narrow">
+      <h2>Configuración del negocio</h2>
+      <label>Nombre del local</label><input id="businessName" placeholder="Mi Hamburguesería">
+      <label>Teléfono del local</label><input id="businessPhone" placeholder="569...">
+      <label>Mensaje final para WhatsApp</label><textarea id="thanksMessage">¡Gracias por tu pedido!</textarea>
+      <button class="primary" onclick="saveSettings()">Guardar configuración</button>
+      <hr>
+      <div class="notice"><b>WhatsApp automático:</b> esta versión abre WhatsApp con el pedido listo. La recepción automática de mensajes requiere WhatsApp Business Platform/Cloud API y un webhook.</div>
+      <div class="notice"><b>Pago automático:</b> para cambiar a “Pagado” sin intervención se conecta en la siguiente etapa la pasarela que utilices.</div>
+    </div>
+  </section>
+</main>
+
+<div class="modal hidden" id="productModal">
+  <div class="modalbox">
+    <div class="row between"><h2 id="modalTitle">Nuevo producto</h2><button class="secondary small" onclick="closeProductModal()">✕</button></div>
+    <input type="hidden" id="editId">
+    <label>Nombre</label><input id="pName" placeholder="Ej: Bacon Crunch">
+    <div class="two"><div><label>Tipo / categoría</label><input id="pType" placeholder="Hamburguesa"></div><div><label>Disponible</label><select id="pActive"><option value="true">Sí</option><option value="false">No</option></select></div></div>
+    <label>Ingredientes / descripción</label><textarea id="pDesc"></textarea>
+    <div class="two"><div><label>Costo real</label><input id="pCost" type="number" min="0" step="1" oninput="updateSuggestedPrice()"></div><div><label>Margen objetivo (%)</label><input id="pMargin" type="number" min="1" max="95" value="45" oninput="updateSuggestedPrice()"></div></div>
+    <div class="notice">Precio sugerido: <b id="suggestedPrice">$0</b><div class="smalltxt">Costo ÷ (1 − margen objetivo).</div></div>
+    <label>Precio de venta</label><input id="pPrice" type="number" min="0" step="1">
+    <button class="primary full" onclick="saveProduct()">Guardar producto</button>
+  </div>
+</div>
+<script src="app.js"></script>
+</body>
+</html>

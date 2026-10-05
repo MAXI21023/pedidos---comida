@@ -1,0 +1,22 @@
+GESTOR DE PEDIDOS - MAC M1
+===========================
+
+Si macOS no permite abrir INSTALAR_M1.command:
+
+1. Abre la aplicación TERMINAL en tu Mac.
+2. Escribe: cd 
+   (deja un espacio después de cd)
+3. Arrastra la carpeta descomprimida "gestor-pedidos-mac" dentro de la ventana de Terminal y presiona Enter.
+4. Copia y pega estas líneas, una por una:
+
+chmod +x INSTALAR_M1.command CREAR_DMG_M1.command
+xattr -dr com.apple.quarantine .
+./INSTALAR_M1.command
+
+Si aparece "No se encontró Node.js", instala Node.js LTS para macOS ARM64 desde nodejs.org, cierra Terminal, vuelve a abrirla y repite los pasos.
+
+Cuando la aplicación abra correctamente, para generar el instalador DMG ejecuta:
+
+./CREAR_DMG_M1.command
+
+El DMG se guardará en la carpeta dist.
