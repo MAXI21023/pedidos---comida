@@ -56,6 +56,32 @@ function createWindow() {
 app.whenReady().then(() => {
   ipcMain.handle('data:get', () => readData());
   ipcMain.handle('data:set', (_event, data) => writeData(data));
+  ipcMain.handle('server:request', async (_event, request = {}) => {
+    try {
+      const base = String(request.baseUrl || '').trim().replace(/\/$/, '');
+      if (!base) return { ok: false, status: 0, error: 'Configura la URL del servidor.' };
+      const parsed = new URL(base);
+      if (parsed.protocol !== 'https:') return { ok: false, status: 0, error: 'El servidor debe usar HTTPS.' };
+
+      const method = String(request.method || 'GET').toUpperCase();
+      const pathName = String(request.path || '/');
+      const headers = { Accept: 'application/json' };
+      if (request.apiKey) headers['X-API-Key'] = String(request.apiKey);
+      if (request.body !== undefined && request.body !== null) headers['Content-Type'] = 'application/json';
+
+      const response = await fetch(base + (pathName.startsWith('/') ? pathName : '/' + pathName), {
+        method,
+        headers,
+        body: request.body !== undefined && request.body !== null ? JSON.stringify(request.body) : undefined
+      });
+      const raw = await response.text();
+      let data = null;
+      try { data = raw ? JSON.parse(raw) : null; } catch { data = raw; }
+      return { ok: response.ok, status: response.status, data, error: response.ok ? null : (data?.error || raw || 'Error del servidor') };
+    } catch (error) {
+      return { ok: false, status: 0, error: error?.message || 'No se pudo conectar con el servidor.' };
+    }
+  });
   ipcMain.handle('notify', (_event, { title, body }) => {
     if (Notification.isSupported()) new Notification({ title, body }).show();
     return true;

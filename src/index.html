@@ -17,6 +17,7 @@
     <div class="top-actions">
       <span class="badge" id="unpaidBadge">💳 0 por pagar</span>
       <span class="badge" id="deliveryBadge">🛵 0 por entregar</span>
+      <span class="badge sync-off" id="syncBadge">☁️ Sin conexión</span>
       <button class="secondary small" onclick="exportBackup()">Respaldar</button>
       <button class="secondary small" onclick="importBackup()">Importar</button>
     </div>
@@ -119,7 +120,16 @@
       <label>Nombre del local</label><input id="businessName" placeholder="Mi Hamburguesería">
       <label>Teléfono del local</label><input id="businessPhone" placeholder="569...">
       <label>Mensaje final para WhatsApp</label><textarea id="thanksMessage">¡Gracias por tu pedido!</textarea>
-      <button class="primary" onclick="saveSettings()">Guardar configuración</button>
+      <hr>
+      <h2>Sincronización web</h2>
+      <div class="notice">Conecta esta aplicación con el menú y los pedidos publicados en Render.</div>
+      <label>Servidor Render</label><input id="serverUrl" placeholder="https://pedidos-comida-2ktc.onrender.com">
+      <label>Clave de sincronización</label><input id="apiKey" type="password" autocomplete="off" placeholder="API_KEY">
+      <div class="two">
+        <button class="primary full" onclick="saveSettings()">Guardar configuración</button>
+        <button class="secondary full" onclick="syncNow(true)">Sincronizar ahora</button>
+      </div>
+      <div class="smalltxt topgap" id="syncMessage">La sincronización automática se ejecuta cada 10 segundos cuando está configurada.</div>
       <hr>
       <div class="notice"><b>WhatsApp automático:</b> esta versión abre WhatsApp con el pedido listo. La recepción automática de mensajes requiere WhatsApp Business Platform/Cloud API y un webhook.</div>
       <div class="notice"><b>Pago automático:</b> para cambiar a “Pagado” sin intervención se conecta en la siguiente etapa la pasarela que utilices.</div>
