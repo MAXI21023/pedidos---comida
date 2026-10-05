@@ -80,5 +80,6 @@ def producto():
 def nuevos():
  c=db(); rows=c.execute("SELECT id,cliente,detalle,total,fecha FROM pedidos WHERE estado='Nuevo' ORDER BY id DESC LIMIT 20").fetchall(); c.close(); return jsonify([dict(r) for r in rows])
 
+init_db()
 if __name__=='__main__':
  init_db(); app.run(host='0.0.0.0',port=int(os.getenv('PORT','5000')))
