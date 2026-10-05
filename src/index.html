@@ -144,8 +144,11 @@
     <label>Nombre</label><input id="pName" placeholder="Ej: Bacon Crunch">
     <div class="two"><div><label>Tipo / categoría</label><input id="pType" placeholder="Hamburguesa"></div><div><label>Disponible</label><select id="pActive"><option value="true">Sí</option><option value="false">No</option></select></div></div>
     <label>Ingredientes / descripción</label><textarea id="pDesc"></textarea>
-    <div class="two"><div><label>Costo real</label><input id="pCost" type="number" min="0" step="1" oninput="updateSuggestedPrice()"></div><div><label>Margen objetivo (%)</label><input id="pMargin" type="number" min="1" max="95" value="45" oninput="updateSuggestedPrice()"></div></div>
-    <div class="notice">Precio sugerido: <b id="suggestedPrice">$0</b><div class="smalltxt">Costo ÷ (1 − margen objetivo).</div></div>
+    <div class="notice"><b>Ingredientes y costo real</b><div class="smalltxt">Agrega cada ingrediente, su cantidad usada y el precio unitario. El costo de la burger se calcula automáticamente.</div></div>
+    <div id="ingredientRows"></div>
+    <button type="button" class="secondary full" onclick="addIngredientRow()">+ Agregar ingrediente</button>
+    <div class="two topgap"><div><label>Costo real calculado</label><input id="pCost" type="number" min="0" step="1" readonly></div><div><label>Margen objetivo (%)</label><input id="pMargin" type="number" min="1" max="95" value="45" oninput="updateSuggestedPrice()"></div></div>
+    <div class="notice">Costo ingredientes: <b id="ingredientCost">$0</b> · Precio sugerido: <b id="suggestedPrice">$0</b><div class="smalltxt">Costo = suma de cantidad × precio unitario. Precio sugerido = costo ÷ (1 − margen objetivo).</div></div>
     <label>Precio de venta</label><input id="pPrice" type="number" min="0" step="1">
     <button class="primary full" onclick="saveProduct()">Guardar producto</button>
   </div>
