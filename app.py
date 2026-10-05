@@ -26,6 +26,14 @@ def init_db():
  if 'descripcion' not in cols_prod: c.execute("ALTER TABLE productos ADD COLUMN descripcion TEXT DEFAULT ''")
  cols_ped={r['name'] for r in c.execute("PRAGMA table_info(pedidos)").fetchall()}
  if 'notas' not in cols_ped: c.execute("ALTER TABLE pedidos ADD COLUMN notas TEXT DEFAULT ''")
+ c.execute('''CREATE TABLE IF NOT EXISTS pedido_actividad(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  token TEXT UNIQUE NOT NULL,
+  cliente TEXT DEFAULT '',
+  telefono TEXT DEFAULT '',
+  evento TEXT DEFAULT 'started',
+  fecha TEXT NOT NULL
+ )''')
  c.execute('''CREATE TABLE IF NOT EXISTS pedido_items(
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   pedido_id INTEGER NOT NULL,
@@ -61,6 +69,27 @@ def admin_required(f):
 def menu():
  c=db(); ps=c.execute('SELECT * FROM productos WHERE activo=1 ORDER BY tipo,nombre').fetchall(); c.close()
  return render_template('menu.html',productos=ps)
+
+@app.post('/api/order-activity')
+def order_activity():
+ data=request.get_json(silent=True) or {}
+ token=str(data.get('token') or '').strip()[:80]
+ if not token: return jsonify({'error':'Token requerido'}),400
+ cliente=str(data.get('cliente') or '').strip()[:80]
+ telefono=str(data.get('telefono') or '').strip()[:30]
+ c=db()
+ c.execute('INSERT OR IGNORE INTO pedido_actividad(token,cliente,telefono,evento,fecha) VALUES(?,?,?,?,?)',(token,cliente,telefono,'started',datetime.now().isoformat(timespec='seconds')))
+ if cliente or telefono: c.execute('UPDATE pedido_actividad SET cliente=CASE WHEN ?<>"" THEN ? ELSE cliente END,telefono=CASE WHEN ?<>"" THEN ? ELSE telefono END WHERE token=?',(cliente,cliente,telefono,telefono,token))
+ c.commit(); c.close()
+ return jsonify({'ok':True})
+
+@app.get('/api/desktop/activity')
+@api_required
+def desktop_activity():
+ try: after=max(0,int(request.args.get('after',0)))
+ except: after=0
+ c=db(); rows=c.execute('SELECT id,token,cliente,telefono,evento,fecha FROM pedido_actividad WHERE id>? ORDER BY id ASC LIMIT 50',(after,)).fetchall(); c.close()
+ return jsonify([dict(r) for r in rows])
 
 @app.post('/ordenar')
 def ordenar():
@@ -109,7 +138,7 @@ def producto():
 @app.get('/api/desktop/health')
 @api_required
 def desktop_health():
- return jsonify({'ok':True,'service':'pedidos-comida','version':'0.2.0'})
+ return jsonify({'ok':True,'service':'pedidos-comida','version':'0.3.0'})
 
 @app.get('/api/desktop/orders')
 @api_required

@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld('desktopAPI', {
   getData: () => ipcRenderer.invoke('data:get'),
   setData: (data) => ipcRenderer.invoke('data:set', data),
   notify: (title, body) => ipcRenderer.invoke('notify', { title, body }),
+  printVoucher: (html) => ipcRenderer.invoke('print:voucher', html),
   exportBackup: (data) => ipcRenderer.invoke('backup:export', data),
   importBackup: () => ipcRenderer.invoke('backup:import'),
   exportCSV: (csv) => ipcRenderer.invoke('csv:export', csv),
