@@ -16,7 +16,12 @@ const calcMargin=(price,cost)=>price?((price-cost)/price*100):0;
 const calcSuggested=(cost,margin)=>{const m=Number(margin)/100;return m>=1?0:Number(cost)/(1-m)};
 const escapeHtml=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));
 
-async function persist(){await window.desktopAPI.setData(state)}
+let persistQueue=Promise.resolve();
+function persist(){
+ const snapshot=JSON.parse(JSON.stringify(state));
+ persistQueue=persistQueue.then(()=>window.desktopAPI.setData(snapshot)).catch(e=>{console.error("Error guardando datos",e)});
+ return persistQueue
+}
 async function init(){
   const saved=await window.desktopAPI.getData();
   state=saved||state;
@@ -160,4 +165,6 @@ let syncBusy=false;
 async function syncNow(showFeedback=false){if(syncBusy)return false;if(!syncConfigured()){setSyncStatus("off","Configura la sincronización");if(showFeedback)alert("Ingresa la URL de Render y la clave de sincronización.");return false}syncBusy=true;try{const ok=await pullRemoteOrders(showFeedback);if(ok)await pushProducts(false);return ok}finally{syncBusy=false}}
 function startServerSync(){if(syncConfigured()){setSyncStatus("warn","Conectando…");syncNow(false);pullOrderActivity()}else setSyncStatus("off","Sin conexión");setInterval(()=>syncNow(false),10000);setInterval(()=>pullOrderActivity(),2000)}
 
+window.addEventListener("beforeunload",()=>{window.desktopAPI.setData(state)});
+setInterval(()=>persist(),15000);
 init();
