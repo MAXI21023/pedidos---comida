@@ -3,6 +3,7 @@ const activityToken=(crypto.randomUUID?crypto.randomUUID():Date.now()+"-"+Math.r
 let activitySent=false,activityTimer=null;
 function updateTotal(){let total=0;document.querySelectorAll(".qty").forEach(q=>total+=(Number(q.value)||0)*(Number(q.dataset.price)||0));const delivery=document.getElementById("deliveryType")?.value.startsWith("Delivery");if(delivery)total+=2000;document.getElementById("orderTotal").textContent="$"+Math.round(total).toLocaleString("es-CL")}
 updateTotal();
+setTimeout(()=>{if(!activitySent){activitySent=true;sendActivity()}},1200);
 function sendActivity(){
  const f=document.getElementById("orderForm"),cliente=f.elements.cliente?.value||"",telefono=f.elements.telefono?.value||"";
  fetch("/api/order-activity",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:activityToken,cliente,telefono})}).catch(()=>{});
