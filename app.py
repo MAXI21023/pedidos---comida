@@ -107,7 +107,7 @@ def ordenar():
    total += q*p['precio']
  if not items:
   c.close(); flash('Selecciona al menos un producto.'); return redirect(url_for('menu'))
- cliente=request.form.get('cliente','').strip(); telefono=request.form.get('telefono','').strip(); activity_token=request.form.get('activity_token','').strip()[:80]; entrega=request.form.get('entrega','Retiro'); direccion=request.form.get('direccion','').strip(); pago=request.form.get('pago','Efectivo'); notas=request.form.get('notas','').strip()
+ cliente=request.form.get('cliente','').strip(); telefono=''.join(ch for ch in request.form.get('telefono','') if ch.isdigit()); telefono=('569'+telefono[-8:]) if len(telefono)>=8 else telefono; activity_token=request.form.get('activity_token','').strip()[:80]; entrega=request.form.get('entrega','Retiro'); direccion=request.form.get('direccion','').strip(); pago=request.form.get('pago','Efectivo'); notas=request.form.get('notas','').strip()
  if entrega.startswith('Delivery'):
   entrega='Delivery'
   total += 2000
