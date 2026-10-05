@@ -104,7 +104,7 @@ async function pullRemoteOrders(showFeedback=false){
  for(const r of rows.slice().reverse()){
   if(deletedRemoteIds.has(String(r.id)))continue;
   const found=state.orders.find(o=>Number(o.remoteId)===Number(r.id));
-  if(found){const fresh=remoteToLocal(r);const localStatusChangedAt=Number(found.statusChangedAt||0),keepLocal=localStatusChangedAt&&Date.now()-localStatusChangedAt<15000;Object.assign(found,{client:fresh.client,phone:fresh.phone,delivery:fresh.delivery,payment:fresh.payment,address:fresh.address,notes:fresh.notes,items:fresh.items,total:fresh.total,cost:fresh.cost,profit:fresh.profit,paid:fresh.paid,delivered:keepLocal?found.delivered:fresh.delivered,status:keepLocal?found.status:fresh.status})}
+  if(found){const fresh=remoteToLocal(r);const keepLocal=Boolean(found.statusChangedAt);Object.assign(found,{client:fresh.client,phone:fresh.phone,delivery:fresh.delivery,payment:fresh.payment,address:fresh.address,notes:fresh.notes,items:fresh.items,total:fresh.total,cost:fresh.cost,profit:fresh.profit,paid:fresh.paid,delivered:keepLocal?found.delivered:fresh.delivered,status:keepLocal?found.status:fresh.status})}
   else{const fresh=remoteToLocal(r);state.orders.unshift(fresh);added++;if(!first)await window.desktopAPI.notify("Nuevo pedido web",`Pedido #${fresh.number} · ${fresh.client} · ${money(fresh.total)}`)}
  }
  state.settings.syncInitialized=true;await persist();renderOrders();renderBadges();renderStats();setSyncStatus("on","Sincronizado");if(showFeedback)alert(`Sincronización completa. ${added} pedido(s) nuevo(s).`);return true
@@ -136,7 +136,7 @@ async function pullOrderActivity(){
  for(const a of res.data){
   const isNew=!draftActivities.has(a.token)&&Number(a.id)>activityLastId;
   activityLastId=Math.max(activityLastId,Number(a.id)||0);
-  if(Number(a.confirmado))draftActivities.delete(a.token);else draftActivities.set(a.token,a);
+  const confirmed=a.confirmado===true||a.confirmado===1||a.confirmado==="1"||a.confirmado==="true";if(confirmed)draftActivities.delete(a.token);else draftActivities.set(a.token,a);
   if(isNew){const who=(a.cliente||"Cliente").trim()||"Cliente";await window.desktopAPI.notify("🟡 Cliente preparando pedido",who+" está armando un pedido en la web.")}
  }
  localStorage.setItem("activityLastId",String(activityLastId));
