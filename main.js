@@ -4,6 +4,26 @@ const fs = require('fs');
 
 let mainWindow;
 
+function deviceIdFile() {
+  return path.join(app.getPath('userData'), 'device-id.txt');
+}
+
+function getDeviceId() {
+  const file=deviceIdFile();
+  try {
+    if(fs.existsSync(file)){
+      const id=fs.readFileSync(file,'utf8').trim();
+      if(id) return id;
+    }
+    const id='device-'+require('crypto').randomUUID();
+    fs.mkdirSync(path.dirname(file),{recursive:true});
+    fs.writeFileSync(file,id,'utf8');
+    return id;
+  } catch {
+    return 'device-'+require('crypto').randomUUID();
+  }
+}
+
 function dataFile() {
   return path.join(app.getPath('userData'), 'gestor-pedidos-data.json');
 }
@@ -64,6 +84,7 @@ function createWindow() {
 app.on('before-quit',()=>{try{if(mainWindow&&!mainWindow.isDestroyed())mainWindow.webContents.send('app:save-before-quit')}catch{}});
 app.whenReady().then(() => {
   ipcMain.handle('data:get', () => readData());
+  ipcMain.handle('device:id', () => getDeviceId());
   ipcMain.handle('external:open', async (_event, url) => { try { const u=new URL(String(url)); if(u.hostname!=='wa.me'&&u.hostname!=='api.whatsapp.com') return {ok:false}; await shell.openExternal(u.toString()); return {ok:true}; } catch { return {ok:false}; } });
   ipcMain.handle('data:set', (_event, data) => writeData(data));
   ipcMain.handle('server:request', async (_event, request = {}) => {
