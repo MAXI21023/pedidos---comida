@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('desktopAPI', {
   getData: () => ipcRenderer.invoke('data:get'),
+  getDeviceId: () => ipcRenderer.invoke('device:id'),
   setData: (data) => ipcRenderer.invoke('data:set', data),
   notify: (title, body) => ipcRenderer.invoke('notify', { title, body }),
   printVoucher: (html) => ipcRenderer.invoke('print:voucher', html),
