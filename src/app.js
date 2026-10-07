@@ -28,6 +28,7 @@ async function init(){
   if(!Array.isArray(state.products)||!state.products.length) state.products=defaultProducts;
   if(!Array.isArray(state.orders)) state.orders=[];
   if(!Array.isArray(state.ingredients)) state.ingredients=[];
+  if(!state.dailyStock) state.dailyStock={};
   state.settings={businessName:"Mi Hamburguesería",businessPhone:"",thanksMessage:"¡Gracias por tu pedido!",serverUrl:"https://pedidos-comida-2ktc.onrender.com",apiKey:"",syncInitialized:false,...(state.settings||{})};
   await persist();
   renderAll();
@@ -41,10 +42,41 @@ function renderAll(){
   document.getElementById("thanksMessage").value=state.settings.thanksMessage||"";
   document.getElementById("serverUrl").value=state.settings.serverUrl||"";
   document.getElementById("apiKey").value=state.settings.apiKey||"";
-  renderProducts();renderCart();renderBadges();renderOrders();renderStats();renderAdmin();renderInventory();
+  renderProducts();renderCart();renderBadges();renderOrders();renderStats();renderAdmin();renderInventory();renderDailyStock();
 }
 function goTab(id,btn){["new","orders","cash","admin","settings"].forEach(x=>document.getElementById(x).classList.toggle("hidden",x!==id));document.querySelectorAll(".nav button").forEach(x=>x.classList.remove("active"));btn.classList.add("active");if(id==="orders")renderOrders();if(id==="cash")renderStats();if(id==="admin"){renderAdmin();renderInventory()}}
 function fillCategoryFilter(){const sel=document.getElementById("categoryFilter"),current=sel.value||"all",cats=[...new Set(state.products.map(p=>p.type).filter(Boolean))].sort();sel.innerHTML='<option value="all">Todas las categorías</option>'+cats.map(c=>`<option ${c===current?"selected":""}>${escapeHtml(c)}</option>`).join("")}
+
+function renderDailyStock(){
+ const body=document.getElementById("dailyStockRows"); if(!body)return;
+ body.innerHTML=state.products.filter(p=>p.active).map(p=>{
+  const s=state.dailyStock[String(p.id)]||{stock:0,available:true};
+  return '<tr><td><b>'+escapeHtml(p.name)+'</b></td><td><input data-stock-id="'+p.id+'" type="number" min="0" value="'+(Number(s.stock)||0)+'"></td><td><select data-stock-available="'+p.id+'"><option value="true" '+(s.available!==false?'selected':'')+'>Disponible</option><option value="false" '+(s.available===false?'selected':'')+'>No disponible</option></select></td></tr>';
+ }).join("");
+}
+async function loadDailyStock(){
+ if(!syncConfigured())return false;
+ const res=await apiCall("/api/desktop/stock");
+ if(!res.ok)return false;
+ for(const x of (res.data||[])){
+  const key=String(x.desktop_id||x.id);
+  state.dailyStock[key]={stock:Number(x.stock_diario)||0,available:Boolean(x.disponible)};
+ }
+ await persist(); renderDailyStock(); return true;
+}
+async function saveDailyStock(){
+ document.querySelectorAll("[data-stock-id]").forEach(el=>{
+  const id=String(el.dataset.stockId);
+  const av=document.querySelector('[data-stock-available="'+id+'"]');
+  state.dailyStock[id]={stock:Math.max(0,Number(el.value)||0),available:av?av.value==="true":true};
+ });
+ await persist();
+ const products=state.products.filter(p=>p.active).map(p=>({id:String(p.id),stock:state.dailyStock[String(p.id)]?.stock||0,available:state.dailyStock[String(p.id)]?.available!==false}));
+ const res=await apiCall("/api/desktop/stock","POST",{products:products});
+ if(!res.ok){alert("No se pudo actualizar el stock en la web.");return false;}
+ setSyncStatus("on","Stock sincronizado"); alert("Stock del día actualizado."); return true;
+}
+
 function renderProducts(){fillCategoryFilter();const filter=document.getElementById("categoryFilter").value,list=state.products.filter(p=>p.active&&(filter==="all"||p.type===filter));document.getElementById("products").innerHTML=list.length?list.map(p=>`<div class="product"><div class="row between"><span class="status">${escapeHtml(p.type||"Producto")}</span><span class="smalltxt">#${p.id}</span></div><h3>${escapeHtml(p.name)}</h3><div class="muted">${escapeHtml(p.desc||"")}</div><div class="price">${money(p.price)}</div><button class="primary full" onclick="addToCart(${p.id})">+ Agregar</button></div>`).join(""):'<div class="muted">No hay productos disponibles.</div>'}
 function addToCart(id){const p=state.products.find(x=>x.id===id);if(!p)return;const c=cart.find(x=>x.id===id);c?c.qty++:cart.push({...p,qty:1});renderCart()}
 function changeQty(id,d){const c=cart.find(x=>x.id===id);if(!c)return;c.qty+=d;if(c.qty<=0)cart=cart.filter(x=>x.id!==id);renderCart()}
@@ -184,7 +216,7 @@ async function pullOrderActivity(){
  renderOrders();renderDraftActivities();
 }
 let syncBusy=false;
-async function syncNow(showFeedback=false){if(syncBusy)return false;if(!syncConfigured()){setSyncStatus("off","Configura la sincronización");if(showFeedback)alert("Ingresa la URL de Render y la clave de sincronización.");return false}syncBusy=true;try{const ok=await pullRemoteOrders(showFeedback);if(ok)await pushProducts(false);return ok}finally{syncBusy=false}}
+async function syncNow(showFeedback=false){if(syncBusy)return false;if(!syncConfigured()){setSyncStatus("off","Configura la sincronización");if(showFeedback)alert("Ingresa la URL de Render y la clave de sincronización.");return false}syncBusy=true;try{const ok=await pullRemoteOrders(showFeedback);if(ok){await pushProducts(false);await loadDailyStock();}return ok}finally{syncBusy=false}}
 function startServerSync(){if(syncConfigured()){setSyncStatus("warn","Conectando…");syncNow(false);pullOrderActivity()}else setSyncStatus("off","Sin conexión");setInterval(()=>syncNow(false),10000);setInterval(()=>pullOrderActivity(),2000)}
 
 window.addEventListener("beforeunload",()=>{window.desktopAPI.setData(state)});
