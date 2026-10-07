@@ -104,6 +104,10 @@
 
   <section id="admin" class="hidden">
     <div class="card">
+      <div class="row between wrap"><div><h2>Stock del día</h2><div class="muted">Define cuántas unidades venderás hoy. Al llegar a 0, el producto aparecerá agotado para el cliente.</div></div><button class="primary" onclick="saveDailyStock()">Guardar stock</button></div>
+      <div class="tablewrap"><table class="table"><thead><tr><th>Producto</th><th>Stock disponible</th><th>Disponible</th></tr></thead><tbody id="dailyStockRows"></tbody></table></div>
+    </div>
+    <div class="card">
       <div class="row between wrap"><div><h2>Inventario de ingredientes</h2><div class="muted">Registra una vez el formato y precio de compra. Las recetas usarán estos valores para calcular el costo real.</div></div><button class="primary" onclick="addInventoryIngredient()">+ Ingrediente</button></div>
       <div class="tablewrap"><table class="table"><thead><tr><th>Ingrediente</th><th>Cantidad compra</th><th>Unidad</th><th>Precio compra</th><th>Costo unitario</th><th>Acciones</th></tr></thead><tbody id="inventoryRows"></tbody></table></div>
     </div>
