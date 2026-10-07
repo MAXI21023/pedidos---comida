@@ -29,9 +29,10 @@ async function init(){
   if(!Array.isArray(state.orders)) state.orders=[];
   if(!Array.isArray(state.ingredients)) state.ingredients=[];
   if(!state.dailyStock) state.dailyStock={};
-  state.settings={businessName:"Mi Hamburguesería",businessPhone:"",thanksMessage:"¡Gracias por tu pedido!",serverUrl:"https://pedidos-comida-2ktc.onrender.com",apiKey:"",syncInitialized:false,...(state.settings||{})};
+  state.settings={businessName:"Mi Hamburguesería",businessPhone:"",thanksMessage:"¡Gracias por tu pedido!",serverUrl:"https://pedidos-comida-2ktc.onrender.com",apiKey:"",sessionToken:"",licenseActive:false,licensedBusiness:"",businessId:null,syncInitialized:false,...(state.settings||{})};
   await persist();
   renderAll();
+  await validateLicense();
   startServerSync();
 }
 
@@ -42,6 +43,7 @@ function renderAll(){
   document.getElementById("thanksMessage").value=state.settings.thanksMessage||"";
   document.getElementById("serverUrl").value=state.settings.serverUrl||"";
   document.getElementById("apiKey").value=state.settings.apiKey||"";
+  renderLicenseStatus();
   renderProducts();renderCart();renderBadges();renderOrders();renderStats();renderAdmin();renderInventory();renderDailyStock();
 }
 function goTab(id,btn){["new","orders","cash","admin","settings"].forEach(x=>document.getElementById(x).classList.toggle("hidden",x!==id));document.querySelectorAll(".nav button").forEach(x=>x.classList.remove("active"));btn.classList.add("active");if(id==="orders")renderOrders();if(id==="cash")renderStats();if(id==="admin"){renderAdmin();renderInventory()}}
@@ -148,9 +150,34 @@ async function importBackup(){try{const data=await window.desktopAPI.importBacku
 async function exportOrdersCSV(){const headers=["N°","Fecha","Cliente","Teléfono","Total","Costo","Utilidad","Pagado","Entregado","Estado","Entrega","Pago","Productos"],rows=state.orders.map(o=>[o.number,o.date,o.client,o.phone,o.total,o.cost??0,o.total-(o.cost??0),o.paid?"Sí":"No",o.delivered?"Sí":"No",o.status,o.delivery,o.payment,o.items.map(i=>`${i.qty}x ${i.name}`).join(" | ")]),esc=v=>`"${String(v??"").replace(/"/g,'""')}"`,csv=[headers,...rows].map(r=>r.map(esc).join(";")).join("\n");const ok=await window.desktopAPI.exportCSV(csv);if(ok)alert("CSV exportado.")}
 
 
-function syncConfigured(){return Boolean(state.settings.serverUrl&&state.settings.apiKey)}
+function syncConfigured(){return Boolean(state.settings.serverUrl&&(state.settings.sessionToken||state.settings.apiKey))}
 function setSyncStatus(kind,text){const b=document.getElementById("syncBadge"),m=document.getElementById("syncMessage");if(b){b.classList.remove("sync-on","sync-warn","sync-off");b.classList.add(kind==="on"?"sync-on":kind==="warn"?"sync-warn":"sync-off");b.textContent=(kind==="on"?"☁️ ":"⚠️ ")+text}if(m)m.textContent=text}
-async function apiCall(path,method="GET",body=null){if(!syncConfigured())return{ok:false,status:0,error:"Configura el servidor y la clave de sincronización."};return window.desktopAPI.serverRequest({baseUrl:state.settings.serverUrl,apiKey:state.settings.apiKey,path,method,body})}
+async function apiCall(path,method="GET",body=null){if(!syncConfigured())return{ok:false,status:0,error:"Activa la licencia o configura la sincronización."};return window.desktopAPI.serverRequest({baseUrl:state.settings.serverUrl,apiKey:state.settings.apiKey,sessionToken:state.settings.sessionToken,path,method,body})}
+async function activateLicense(){
+ const input=document.getElementById("licenseKey"),msg=document.getElementById("licenseMessage");
+ const key=(input?.value||"").trim(); if(!key){if(msg)msg.textContent="Ingresa la clave de licencia.";return}
+ if(msg)msg.textContent="Activando...";
+ const deviceId=await window.desktopAPI.getDeviceId();
+ const res=await window.desktopAPI.serverRequest({baseUrl:state.settings.serverUrl,path:"/api/license/activate",method:"POST",body:{license_key:key,device_id:deviceId,device_name:"Gestor de Pedidos"}});
+ if(!res.ok){if(msg)msg.textContent=res.error||"No se pudo activar la licencia.";return}
+ state.settings.sessionToken=res.data.session_token||"";
+ state.settings.businessId=res.data.business_id||null;
+ state.settings.licensedBusiness=res.data.business_name||"";
+ state.settings.licenseActive=true;
+ await persist(); renderLicenseStatus(); startServerSync(); if(msg)msg.textContent="Licencia activada correctamente.";
+}
+async function validateLicense(){
+ if(!state.settings.sessionToken){renderLicenseStatus();return false}
+ const res=await apiCall("/api/license/status");
+ if(res.ok){state.settings.licenseActive=true;state.settings.businessId=res.data.business_id||state.settings.businessId;state.settings.licensedBusiness=res.data.business_name||state.settings.licensedBusiness;await persist();renderLicenseStatus();return true}
+ state.settings.licenseActive=false;if(res.status===401)state.settings.sessionToken="";await persist();renderLicenseStatus();return false
+}
+function renderLicenseStatus(){
+ const box=document.getElementById("licenseStatus"),input=document.getElementById("licenseKey");
+ if(!box)return;
+ if(state.settings.licenseActive&&state.settings.sessionToken){box.textContent="✓ Licencia activa"+(state.settings.licensedBusiness?" · "+state.settings.licensedBusiness:"");box.className="license-status license-ok";if(input)input.value=""}
+ else{box.textContent="Licencia no activada";box.className="license-status license-off"}
+}
 function remoteToLocal(r){
  const items=Array.isArray(r.items)?r.items.map(x=>({id:x.id,name:x.name||"Producto",type:x.type||"Producto",qty:Number(x.qty)||1,price:Number(x.price)||0,cost:Number(x.cost)||0})):[];
  const cost=items.reduce((s,x)=>s+x.cost*x.qty,0),total=Number(r.total)||0;
