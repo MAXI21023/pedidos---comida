@@ -87,6 +87,10 @@ def init_db():
   activo INTEGER NOT NULL DEFAULT 1,
   UNIQUE(negocio_id,device_id)
  )''')
+ c.execute('''CREATE TABLE IF NOT EXISTS sesiones(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, negocio_id INTEGER NOT NULL, device_id TEXT NOT NULL,
+  token_hash TEXT UNIQUE NOT NULL, activo INTEGER NOT NULL DEFAULT 1, creado TEXT NOT NULL, ultimo_acceso TEXT
+ )''')
  c.commit(); c.close()
 
 def hash_password(password, salt=None):
@@ -109,6 +113,33 @@ def admin_required(f):
   if not session.get('admin'): return redirect(url_for('login'))
   return f(*a,**k)
  return w
+
+
+@app.post('/api/license/activate')
+def license_activate():
+ data=request.get_json(silent=True) or {}
+ key=str(data.get('license_key') or '').strip(); device_id=str(data.get('device_id') or '').strip()[:120]; device_name=str(data.get('device_name') or '').strip()[:120]
+ if not key or not device_id: return jsonify({'error':'Licencia y equipo son requeridos'}),400
+ c=db(); lic=c.execute("SELECT l.*,n.nombre negocio FROM licencias l JOIN negocios n ON n.id=l.negocio_id WHERE l.clave=? AND l.estado='activa' AND n.activo=1",(key,)).fetchone()
+ if not lic: c.close(); return jsonify({'error':'Licencia inválida o inactiva'}),401
+ if lic['vence'] and lic['vence'] < datetime.now().date().isoformat(): c.close(); return jsonify({'error':'La licencia está vencida'}),403
+ equipo=c.execute('SELECT * FROM equipos WHERE negocio_id=? AND device_id=?',(lic['negocio_id'],device_id)).fetchone()
+ if not equipo:
+  usados=c.execute('SELECT COUNT(*) n FROM equipos WHERE licencia_id=? AND activo=1',(lic['id'],)).fetchone()['n']
+  if usados>=lic['max_equipos']: c.close(); return jsonify({'error':'Esta licencia alcanzó el máximo de equipos autorizados'}),403
+  c.execute('INSERT INTO equipos(negocio_id,licencia_id,device_id,nombre,ultimo_acceso) VALUES(?,?,?,?,?)',(lic['negocio_id'],lic['id'],device_id,device_name,datetime.now().isoformat(timespec='seconds')))
+ elif not equipo['activo']: c.close(); return jsonify({'error':'Este equipo está desactivado para la licencia'}),403
+ token=new_session_token(); c.execute('UPDATE sesiones SET activo=0 WHERE negocio_id=? AND device_id=?',(lic['negocio_id'],device_id))
+ c.execute('INSERT INTO sesiones(negocio_id,device_id,token_hash,creado,ultimo_acceso) VALUES(?,?,?,?,?)',(lic['negocio_id'],device_id,session_hash(token),datetime.now().isoformat(timespec='seconds'),datetime.now().isoformat(timespec='seconds')))
+ c.commit(); c.close()
+ return jsonify({'ok':True,'session_token':token,'business_id':lic['negocio_id'],'business_name':lic['negocio'],'max_devices':lic['max_equipos']})
+
+@app.get('/api/license/status')
+def license_status():
+ ctx=license_context()
+ if not ctx: return jsonify({'active':False}),401
+ return jsonify({'active':True,'business_id':ctx['negocio_id'],'business_name':ctx['negocio'],'device_id':ctx['device_id']})
+
 
 @app.route('/')
 def menu():
@@ -624,6 +655,21 @@ if __name__=='__main__':
   check=hashlib.pbkdf2_hmac('sha256',str(password).encode(),salt.encode(),200000).hex()
   return hmac.compare_digest(check,digest)
  except: return False
+
+def new_session_token():
+ return secrets.token_urlsafe(32)
+
+def session_hash(token):
+ return hashlib.sha256(str(token).encode()).hexdigest()
+
+def license_context():
+ token=request.headers.get('X-Session-Token','').strip()
+ if not token: return None
+ c=db()
+ row=c.execute("SELECT s.negocio_id,s.device_id,n.nombre negocio FROM sesiones s JOIN negocios n ON n.id=s.negocio_id WHERE s.token_hash=? AND s.activo=1 AND n.activo=1",(session_hash(token),)).fetchone()
+ if row:
+  c.execute('UPDATE sesiones SET ultimo_acceso=? WHERE token_hash=?',(datetime.now().isoformat(timespec='seconds'),session_hash(token))); c.commit()
+ c.close(); return dict(row) if row else None
 
 def api_required(f):
  @wraps(f)
