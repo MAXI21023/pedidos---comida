@@ -24,8 +24,12 @@ def init_db():
  cols_prod={r['name'] for r in c.execute("PRAGMA table_info(productos)").fetchall()}
  if 'desktop_id' not in cols_prod: c.execute('ALTER TABLE productos ADD COLUMN desktop_id TEXT')
  if 'descripcion' not in cols_prod: c.execute("ALTER TABLE productos ADD COLUMN descripcion TEXT DEFAULT ''")
+ if 'stock_diario' not in cols_prod: c.execute("ALTER TABLE productos ADD COLUMN stock_diario INTEGER NOT NULL DEFAULT 0")
+ if 'stock_fecha' not in cols_prod: c.execute("ALTER TABLE productos ADD COLUMN stock_fecha TEXT DEFAULT ''")
+ if 'disponible' not in cols_prod: c.execute("ALTER TABLE productos ADD COLUMN disponible INTEGER NOT NULL DEFAULT 1")
  cols_ped={r['name'] for r in c.execute("PRAGMA table_info(pedidos)").fetchall()}
  if 'notas' not in cols_ped: c.execute("ALTER TABLE pedidos ADD COLUMN notas TEXT DEFAULT ''")
+ if 'stock_descontado' not in cols_ped: c.execute("ALTER TABLE pedidos ADD COLUMN stock_descontado INTEGER NOT NULL DEFAULT 0")
  c.execute('''CREATE TABLE IF NOT EXISTS pedido_actividad(
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   token TEXT UNIQUE NOT NULL,
@@ -70,7 +74,9 @@ def admin_required(f):
 
 @app.route('/')
 def menu():
- c=db(); ps=c.execute('SELECT * FROM productos WHERE activo=1 ORDER BY tipo,nombre').fetchall(); c.close()
+ c=db(); hoy=datetime.now().date().isoformat()
+ c.execute("UPDATE productos SET stock_diario=0,stock_fecha=? WHERE stock_fecha<>?",(hoy,hoy)); c.commit()
+ ps=c.execute('SELECT * FROM productos WHERE activo=1 ORDER BY tipo,nombre').fetchall(); c.close()
  return render_template('menu.html',productos=ps)
 
 @app.post('/api/order-activity')
@@ -102,6 +108,8 @@ def ordenar():
   try:q=max(0,int(request.form.get('q_'+pid,0)))
   except:q=0
   if q:
+   if not p['disponible'] or p['stock_diario']<=0 or q>p['stock_diario']:
+    c.close(); flash(f"Lo sentimos, ya no quedan suficientes unidades de {p['nombre']}."); return redirect(url_for('menu'))
    items.append(f"{q} x {p['nombre']} ({money(p['precio'])} c/u)")
    structured.append((p['id'],p['nombre'],p['tipo'],q,p['precio'],p['costo']))
    total += q*p['precio']
@@ -136,7 +144,28 @@ def admin():
 @app.post('/admin/pedido/<int:i>')
 @admin_required
 def actualizar(i):
- c=db(); c.execute('UPDATE pedidos SET estado=?,pagado=? WHERE id=?',(request.form['estado'],1 if request.form.get('pagado')=='1' else 0,i)); c.commit(); c.close(); return redirect(url_for('admin'))
+ c=db(); nuevo=request.form['estado']; ped=c.execute('SELECT * FROM pedidos WHERE id=?',(i,)).fetchone()
+ if ped and nuevo=='Confirmado' and not ped['stock_descontado']:
+  items=c.execute('SELECT producto_id,cantidad,nombre FROM pedido_items WHERE pedido_id=?',(i,)).fetchall()
+  for x in items:
+   p=c.execute('SELECT stock_diario,disponible FROM productos WHERE id=?',(x['producto_id'],)).fetchone()
+   if not p or not p['disponible'] or p['stock_diario']<x['cantidad']:
+    c.close(); flash(f"No hay stock suficiente para confirmar {x['nombre']}."); return redirect(url_for('admin'))
+  for x in items: c.execute('UPDATE productos SET stock_diario=stock_diario-? WHERE id=?',(x['cantidad'],x['producto_id']))
+  c.execute('UPDATE pedidos SET stock_descontado=1 WHERE id=?',(i,))
+ c.execute('UPDATE pedidos SET estado=?,pagado=? WHERE id=?',(nuevo,1 if request.form.get('pagado')=='1' else 0,i)); c.commit(); c.close(); return redirect(url_for('admin'))
+
+@app.post('/admin/stock')
+@admin_required
+def stock_admin():
+ c=db(); hoy=datetime.now().date().isoformat()
+ for p in c.execute('SELECT id FROM productos WHERE activo=1').fetchall():
+  pid=p['id']
+  try: cantidad=max(0,int(request.form.get(f'stock_{pid}',0)))
+  except: cantidad=0
+  disponible=1 if request.form.get(f'disponible_{pid}')=='1' else 0
+  c.execute('UPDATE productos SET stock_diario=?,stock_fecha=?,disponible=? WHERE id=?',(cantidad,hoy,disponible,pid))
+ c.commit(); c.close(); flash('Stock del día actualizado.'); return redirect(url_for('admin'))
 
 @app.post('/admin/producto')
 @admin_required
