@@ -27,9 +27,11 @@ def init_db():
  if 'stock_diario' not in cols_prod: c.execute("ALTER TABLE productos ADD COLUMN stock_diario INTEGER NOT NULL DEFAULT 0")
  if 'stock_fecha' not in cols_prod: c.execute("ALTER TABLE productos ADD COLUMN stock_fecha TEXT DEFAULT ''")
  if 'disponible' not in cols_prod: c.execute("ALTER TABLE productos ADD COLUMN disponible INTEGER NOT NULL DEFAULT 1")
+ if 'negocio_id' not in cols_prod: c.execute("ALTER TABLE productos ADD COLUMN negocio_id INTEGER")
  cols_ped={r['name'] for r in c.execute("PRAGMA table_info(pedidos)").fetchall()}
  if 'notas' not in cols_ped: c.execute("ALTER TABLE pedidos ADD COLUMN notas TEXT DEFAULT ''")
  if 'stock_descontado' not in cols_ped: c.execute("ALTER TABLE pedidos ADD COLUMN stock_descontado INTEGER NOT NULL DEFAULT 0")
+ if 'negocio_id' not in cols_ped: c.execute("ALTER TABLE pedidos ADD COLUMN negocio_id INTEGER")
  c.execute('''CREATE TABLE IF NOT EXISTS pedido_actividad(
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   token TEXT UNIQUE NOT NULL,
@@ -41,6 +43,7 @@ def init_db():
  )''')
  cols_act={r['name'] for r in c.execute("PRAGMA table_info(pedido_actividad)").fetchall()}
  if 'confirmado' not in cols_act: c.execute("ALTER TABLE pedido_actividad ADD COLUMN confirmado INTEGER DEFAULT 0")
+ if 'negocio_id' not in cols_act: c.execute("ALTER TABLE pedido_actividad ADD COLUMN negocio_id INTEGER")
  c.execute('''CREATE TABLE IF NOT EXISTS pedido_items(
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   pedido_id INTEGER NOT NULL,
@@ -51,6 +54,8 @@ def init_db():
   precio INTEGER NOT NULL,
   costo INTEGER NOT NULL DEFAULT 0
  )''')
+ cols_items={r['name'] for r in c.execute("PRAGMA table_info(pedido_items)").fetchall()}
+ if 'negocio_id' not in cols_items: c.execute("ALTER TABLE pedido_items ADD COLUMN negocio_id INTEGER")
  c.execute('''CREATE TABLE IF NOT EXISTS negocios(
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   nombre TEXT NOT NULL,
@@ -674,10 +679,13 @@ def license_context():
 def api_required(f):
  @wraps(f)
  def w(*a,**k):
+  ctx=license_context()
+  if ctx:
+   request.business_id=ctx['negocio_id']; request.device_id=ctx['device_id']; return f(*a,**k)
   supplied=request.headers.get('X-API-Key','')
-  if not API_KEY or not supplied or not hmac.compare_digest(supplied,API_KEY):
-   return jsonify({'error':'No autorizado'}),401
-  return f(*a,**k)
+  if API_KEY and supplied and hmac.compare_digest(supplied,API_KEY):
+   request.business_id=None; request.device_id=None; return f(*a,**k)
+  return jsonify({'error':'No autorizado'}),401
  return w
 
 def money(n): return '$'+f'{int(n):,}'.replace(',','.')
