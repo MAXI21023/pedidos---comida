@@ -98,6 +98,7 @@ app.whenReady().then(() => {
       const pathName = String(request.path || '/');
       const headers = { Accept: 'application/json' };
       if (request.apiKey) headers['X-API-Key'] = String(request.apiKey);
+      if (request.sessionToken) headers['X-Session-Token'] = String(request.sessionToken);
       if (request.body !== undefined && request.body !== null) headers['Content-Type'] = 'application/json';
 
       const response = await fetch(base + (pathName.startsWith('/') ? pathName : '/' + pathName), {
