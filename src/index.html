@@ -129,6 +129,13 @@
       <label>Teléfono del local</label><input id="businessPhone" placeholder="569...">
       <label>Mensaje final para WhatsApp</label><textarea id="thanksMessage">¡Gracias por tu pedido!</textarea>
       <hr>
+      <h2>Licencia del equipo</h2>
+      <div class="notice">Activa este computador con la licencia de tu negocio. Cada negocio mantiene sus pedidos, productos y stock separados.</div>
+      <div id="licenseStatus" class="license-status license-off">Licencia no activada</div>
+      <label>Clave de licencia</label><input id="licenseKey" type="text" autocomplete="off" placeholder="Ej: GP-XXXX-XXXX-XXXX">
+      <button class="primary full" onclick="activateLicense()">Activar licencia en este computador</button>
+      <div class="smalltxt topgap" id="licenseMessage"></div>
+      <hr>
       <h2>Sincronización web</h2>
       <div class="notice">Conecta esta aplicación con el menú y los pedidos publicados en Render.</div>
       <label>Servidor Render</label><input id="serverUrl" placeholder="https://pedidos-comida-2ktc.onrender.com">
