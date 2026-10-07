@@ -109,6 +109,10 @@ def hash_password(password, salt=None):
   return f(*a,**k)
  return w
 
+def tenant_clause(column='negocio_id'):
+ bid=getattr(request,'business_id',None)
+ return (f"{column} IS NULL",[]) if bid is None else (f"{column}=?", [bid])
+
 def money(n): return '$'+f'{int(n):,}'.replace(',','.')
 app.jinja_env.filters['money']=money
 
@@ -250,8 +254,9 @@ def producto():
 @api_required
 def desktop_stock():
  c=db(); hoy=datetime.now().date().isoformat()
- c.execute("UPDATE productos SET stock_diario=0,stock_fecha=? WHERE stock_fecha<>?",(hoy,hoy)); c.commit()
- rows=c.execute('SELECT id,desktop_id,nombre,stock_diario,disponible FROM productos WHERE activo=1 ORDER BY tipo,nombre').fetchall(); c.close()
+ where,args=tenant_clause()
+ c.execute("UPDATE productos SET stock_diario=0,stock_fecha=? WHERE stock_fecha<>? AND "+where,[hoy,hoy]+args); c.commit()
+ rows=c.execute('SELECT id,desktop_id,nombre,stock_diario,disponible FROM productos WHERE activo=1 AND '+where+' ORDER BY tipo,nombre',args).fetchall(); c.close()
  return jsonify([dict(r) for r in rows])
 
 @app.post('/api/desktop/stock')
@@ -282,7 +287,8 @@ def desktop_health():
 @api_required
 def desktop_orders():
  c=db()
- rows=c.execute('SELECT * FROM pedidos ORDER BY id DESC LIMIT 200').fetchall()
+ where,args=tenant_clause()
+ rows=c.execute('SELECT * FROM pedidos WHERE '+where+' ORDER BY id DESC LIMIT 200',args).fetchall()
  result=[]
  for r in rows:
   items=c.execute('SELECT producto_id,nombre,tipo,cantidad,precio,costo FROM pedido_items WHERE pedido_id=? ORDER BY id',(r['id'],)).fetchall()
@@ -305,7 +311,8 @@ def desktop_update_order(i):
  data=request.get_json(silent=True) or {}
  allowed={'Nuevo','Confirmado','Preparando','Listo','En reparto','Entregado','Cancelado'}
  c=db()
- row=c.execute('SELECT id,estado,stock_descontado FROM pedidos WHERE id=?',(i,)).fetchone()
+ where,args=tenant_clause()
+ row=c.execute('SELECT id,estado,stock_descontado FROM pedidos WHERE id=? AND '+where,[i]+args).fetchone()
  if not row:
   c.close(); return jsonify({'error':'Pedido no encontrado'}),404
  if 'estado' in data:
@@ -336,7 +343,8 @@ def desktop_update_order(i):
 @api_required
 def desktop_delete_order(i):
  c=db()
- row=c.execute('SELECT id FROM pedidos WHERE id=?',(i,)).fetchone()
+ where,args=tenant_clause()
+ row=c.execute('SELECT id FROM pedidos WHERE id=? AND '+where,[i]+args).fetchone()
  if not row:
   c.close(); return jsonify({'error':'Pedido no encontrado'}),404
  c.execute('DELETE FROM pedido_items WHERE pedido_id=?',(i,))
@@ -364,7 +372,8 @@ def desktop_products():
  if not isinstance(products,list):
   return jsonify({'error':'Formato de productos no válido'}),400
  c=db()
- c.execute('UPDATE productos SET activo=0')
+ where,args=tenant_clause()
+ c.execute('UPDATE productos SET activo=0 WHERE '+where,args)
  for p in products:
   did=str(p.get('id','')).strip()
   name=str(p.get('name','')).strip()
@@ -374,11 +383,11 @@ def desktop_products():
   precio=max(0,int(p.get('price') or 0))
   costo=max(0,int(p.get('cost') or 0))
   activo=1 if p.get('active',True) else 0
-  old=c.execute('SELECT id FROM productos WHERE desktop_id=?',(did,)).fetchone()
+  old=c.execute('SELECT id FROM productos WHERE desktop_id=? AND '+where,[did]+args).fetchone()
   if old:
    c.execute('UPDATE productos SET nombre=?,tipo=?,descripcion=?,precio=?,costo=?,activo=? WHERE desktop_id=?',(name,tipo,desc,precio,costo,activo,did))
   else:
-   c.execute('INSERT INTO productos(nombre,tipo,precio,costo,activo,desktop_id,descripcion) VALUES(?,?,?,?,?,?,?)',(name,tipo,precio,costo,activo,did,desc))
+   c.execute('INSERT INTO productos(nombre,tipo,precio,costo,activo,desktop_id,descripcion,negocio_id) VALUES(?,?,?,?,?,?,?,?)',(name,tipo,precio,costo,activo,did,desc,getattr(request,'business_id',None)))
  c.commit(); c.close()
  return jsonify({'ok':True,'count':len(products)})
 
