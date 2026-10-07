@@ -172,6 +172,33 @@ def stock_admin():
 def producto():
  f=request.form; c=db(); c.execute('INSERT INTO productos(nombre,tipo,precio,costo) VALUES(?,?,?,?)',(f['nombre'],f['tipo'],int(f['precio']),int(f.get('costo') or 0))); c.commit(); c.close(); return redirect(url_for('admin'))
 
+@app.get('/api/desktop/stock')
+@api_required
+def desktop_stock():
+ c=db(); hoy=datetime.now().date().isoformat()
+ c.execute("UPDATE productos SET stock_diario=0,stock_fecha=? WHERE stock_fecha<>?",(hoy,hoy)); c.commit()
+ rows=c.execute('SELECT id,desktop_id,nombre,stock_diario,disponible FROM productos WHERE activo=1 ORDER BY tipo,nombre').fetchall(); c.close()
+ return jsonify([dict(r) for r in rows])
+
+@app.post('/api/desktop/stock')
+@api_required
+def desktop_set_stock():
+ data=request.get_json(silent=True) or {}; products=data.get('products',[])
+ if not isinstance(products,list): return jsonify({'error':'Formato de stock no válido'}),400
+ c=db(); hoy=datetime.now().date().isoformat()
+ for x in products:
+  did=str(x.get('id','')).strip()
+  try: qty=max(0,int(x.get('stock',0)))
+  except: qty=0
+  available=1 if x.get('available',True) else 0
+  row=c.execute('SELECT id FROM productos WHERE desktop_id=?',(did,)).fetchone()
+  if not row:
+   try: row=c.execute('SELECT id FROM productos WHERE id=?',(int(did),)).fetchone()
+   except: row=None
+  if row: c.execute('UPDATE productos SET stock_diario=?,stock_fecha=?,disponible=? WHERE id=?',(qty,hoy,available,row['id']))
+ c.commit(); c.close()
+ return jsonify({'ok':True})
+
 @app.get('/api/desktop/health')
 @api_required
 def desktop_health():
