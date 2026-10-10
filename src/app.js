@@ -251,7 +251,9 @@ async function pullOrderActivity(){
  }
  for(const [token,a] of draftActivities){if(!activeDrafts().some(x=>x.token===token))draftActivities.delete(token)}
  localStorage.setItem("activityLastId",String(activityLastId));
- renderOrders();renderDraftActivities();
+ // No reconstruir los controles cada 2 segundos mientras el usuario confirma o edita pedidos.
+ const box=document.getElementById("ordersList");
+ if(box){box.querySelectorAll(".draft-activity").forEach(el=>el.remove());const drafts=activeDrafts();if(drafts.length){const html=drafts.map(a=>`<div class="order draft-activity" style="border:2px solid #f0b429;background:#fffaf0"><b>🟡 PEDIDO EN PROCESO</b><div class="smalltxt">${escapeHtml((a.cliente||"Cliente").trim()||"Cliente")}</div><span class="status warn">ARMANDO PEDIDO…</span></div>`).join("");box.insertAdjacentHTML("afterbegin",html)}}
 }
 let syncBusy=false;
 async function syncNow(showFeedback=false){if(syncBusy)return false;if(!syncConfigured()){setSyncStatus("off","Configura la sincronización");if(showFeedback)alert("Ingresa la URL de Render y la clave de sincronización.");return false}syncBusy=true;try{const ok=await pullRemoteOrders(showFeedback);if(ok){await pushProducts(false);await loadDailyStock();}return ok}finally{syncBusy=false}}
