@@ -75,7 +75,6 @@ def admin_required(f):
 @app.route('/')
 def menu():
  c=db(); hoy=datetime.now().date().isoformat()
- c.execute("UPDATE productos SET stock_diario=0,stock_fecha=? WHERE stock_fecha<>?",(hoy,hoy)); c.commit()
  ps=c.execute('SELECT * FROM productos WHERE activo=1 ORDER BY tipo,nombre').fetchall(); c.close()
  return render_template('menu.html',productos=ps)
 
@@ -176,7 +175,6 @@ def producto():
 @api_required
 def desktop_stock():
  c=db(); hoy=datetime.now().date().isoformat()
- c.execute("UPDATE productos SET stock_diario=0,stock_fecha=? WHERE stock_fecha<>?",(hoy,hoy)); c.commit()
  rows=c.execute('SELECT id,desktop_id,nombre,stock_diario,disponible FROM productos WHERE activo=1 ORDER BY tipo,nombre').fetchall(); c.close()
  return jsonify([dict(r) for r in rows])
 
