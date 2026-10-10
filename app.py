@@ -1,6 +1,11 @@
 from flask import Flask, request, render_template, redirect, url_for, session, flash, jsonify
 import sqlite3, os, hmac
 from datetime import datetime
+from zoneinfo import ZoneInfo
+
+CHILE_TZ = ZoneInfo('America/Santiago')
+def chile_now():
+ return datetime.now(CHILE_TZ)
 from functools import wraps
 
 app=Flask(__name__)
@@ -83,7 +88,7 @@ app.jinja_env.globals['salsas_incluidas']=salsas_incluidas
 
 @app.route('/')
 def menu():
- c=db(); hoy=datetime.now().date().isoformat()
+ c=db(); hoy=chile_now().date().isoformat()
  ps=c.execute('SELECT * FROM productos WHERE activo=1 ORDER BY tipo,nombre').fetchall(); c.close()
  return render_template('menu.html',productos=ps)
 
@@ -95,7 +100,7 @@ def order_activity():
  cliente=str(data.get('cliente') or '').strip()[:80]
  telefono=str(data.get('telefono') or '').strip()[:30]
  c=db()
- c.execute('INSERT OR IGNORE INTO pedido_actividad(token,cliente,telefono,evento,fecha) VALUES(?,?,?,?,?)',(token,cliente,telefono,'started',datetime.now().isoformat(timespec='seconds')))
+ c.execute('INSERT OR IGNORE INTO pedido_actividad(token,cliente,telefono,evento,fecha) VALUES(?,?,?,?,?)',(token,cliente,telefono,'started',chile_now().isoformat(timespec='seconds')))
  if cliente or telefono: c.execute('UPDATE pedido_actividad SET cliente=CASE WHEN ?<>"" THEN ? ELSE cliente END,telefono=CASE WHEN ?<>"" THEN ? ELSE telefono END WHERE token=?',(cliente,cliente,telefono,telefono,token))
  c.commit(); c.close()
  return jsonify({'ok':True})
@@ -134,7 +139,7 @@ def ordenar():
   entrega='Delivery'
   total += 1000
   direccion=f'{comuna} - {direccion}'
- cur=c.execute('INSERT INTO pedidos(cliente,telefono,direccion,entrega,pago,detalle,total,fecha,notas) VALUES(?,?,?,?,?,?,?,?,?)',(cliente,telefono,direccion,entrega,pago,' | '.join(items),total,datetime.now().isoformat(timespec='seconds'),notas))
+ cur=c.execute('INSERT INTO pedidos(cliente,telefono,direccion,entrega,pago,detalle,total,fecha,notas) VALUES(?,?,?,?,?,?,?,?,?)',(cliente,telefono,direccion,entrega,pago,' | '.join(items),total,chile_now().isoformat(timespec='seconds'),notas))
  oid=cur.lastrowid
  c.executemany('INSERT INTO pedido_items(pedido_id,producto_id,nombre,tipo,cantidad,precio,costo) VALUES(?,?,?,?,?,?,?)',[(oid,*x) for x in structured])
  if activity_token: c.execute('UPDATE pedido_actividad SET confirmado=1 WHERE token=?',(activity_token,))
@@ -172,7 +177,7 @@ def actualizar(i):
 @app.post('/admin/stock')
 @admin_required
 def stock_admin():
- c=db(); hoy=datetime.now().date().isoformat()
+ c=db(); hoy=chile_now().date().isoformat()
  for p in c.execute('SELECT id FROM productos WHERE activo=1').fetchall():
   pid=p['id']
   try: cantidad=max(0,int(request.form.get(f'stock_{pid}',0)))
@@ -189,7 +194,7 @@ def producto():
 @app.get('/api/desktop/stock')
 @api_required
 def desktop_stock():
- c=db(); hoy=datetime.now().date().isoformat()
+ c=db(); hoy=chile_now().date().isoformat()
  rows=c.execute('SELECT id,desktop_id,nombre,stock_diario,disponible FROM productos WHERE activo=1 ORDER BY tipo,nombre').fetchall(); c.close()
  return jsonify([dict(r) for r in rows])
 
@@ -198,7 +203,7 @@ def desktop_stock():
 def desktop_set_stock():
  data=request.get_json(silent=True) or {}; products=data.get('products',[])
  if not isinstance(products,list): return jsonify({'error':'Formato de stock no válido'}),400
- c=db(); hoy=datetime.now().date().isoformat()
+ c=db(); hoy=chile_now().date().isoformat()
  for x in products:
   did=str(x.get('id','')).strip()
   try: qty=max(0,int(x.get('stock',0)))
