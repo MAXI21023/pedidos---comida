@@ -49,16 +49,20 @@ function renderAll(){
 function goTab(id,btn){["new","orders","cash","admin","settings"].forEach(x=>document.getElementById(x).classList.toggle("hidden",x!==id));document.querySelectorAll(".nav button").forEach(x=>x.classList.remove("active"));btn.classList.add("active");if(id==="orders")renderOrders();if(id==="cash")renderStats();if(id==="admin"){renderAdmin();renderInventory()}}
 function fillCategoryFilter(){const sel=document.getElementById("categoryFilter"),current=sel.value||"all",cats=[...new Set(state.products.map(p=>p.type).filter(Boolean))].sort();sel.innerHTML='<option value="all">Todas las categorías</option>'+cats.map(c=>`<option ${c===current?"selected":""}>${escapeHtml(c)}</option>`).join("")}
 
+let stockEditing=false;
+function markStockEditing(){stockEditing=true}
 function renderDailyStock(){
  const body=document.getElementById("dailyStockRows"); if(!body)return;
  body.innerHTML=state.products.filter(p=>p.active).map(p=>{
   const s=state.dailyStock[String(p.id)]||{stock:0,available:true};
   return '<tr><td><b>'+escapeHtml(p.name)+'</b></td><td><input data-stock-id="'+p.id+'" type="number" min="0" value="'+(Number(s.stock)||0)+'"></td><td><select data-stock-available="'+p.id+'"><option value="true" '+(s.available!==false?'selected':'')+'>Disponible</option><option value="false" '+(s.available===false?'selected':'')+'>No disponible</option></select></td></tr>';
  }).join("");
+ body.querySelectorAll("[data-stock-id], [data-stock-available]").forEach(el=>el.addEventListener("input",markStockEditing));
+ body.querySelectorAll("[data-stock-available]").forEach(el=>el.addEventListener("change",markStockEditing));
 }
 async function loadDailyStock(){
  if(!syncConfigured())return false;
- if(document.activeElement?.matches?.("[data-stock-id], [data-stock-available]"))return false;
+ if(stockEditing||document.activeElement?.matches?.("[data-stock-id], [data-stock-available]"))return false;
  const res=await apiCall("/api/desktop/stock");
  if(!res.ok)return false;
  for(const x of (res.data||[])){
@@ -68,6 +72,7 @@ async function loadDailyStock(){
  await persist(); renderDailyStock(); return true;
 }
 async function saveDailyStock(){
+ stockEditing=true;
  document.querySelectorAll("[data-stock-id]").forEach(el=>{
   const id=String(el.dataset.stockId);
   const av=document.querySelector('[data-stock-available="'+id+'"]');
@@ -78,6 +83,7 @@ async function saveDailyStock(){
  if(!syncConfigured()){setSyncStatus("warn","Stock guardado localmente; pendiente de sincronización");alert("Stock guardado en este computador. Configura la sincronización para publicarlo en la web.");return true;}
  const res=await apiCall("/api/desktop/stock","POST",{products:products});
  if(!res.ok){setSyncStatus("warn","Stock local guardado; sincronización pendiente");alert("Stock guardado en este computador, pero NO se actualizó en la web: "+(res.error||res.status));return false;}
+ stockEditing=false;
  await loadDailyStock();
  setSyncStatus("on","Stock sincronizado"); alert("Stock del día guardado y sincronizado."); return true;
 }
