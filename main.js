@@ -114,6 +114,26 @@ app.whenReady().then(() => {
       return { ok: false, status: 0, error: error?.message || 'No se pudo conectar con el servidor.' };
     }
   });
+  ipcMain.handle('preview:voucher', async (_event, html) => {
+    try {
+      const win = new BrowserWindow({width:500,height:780,title:'Vista previa del voucher',autoHideMenuBar:true,webPreferences:{sandbox:true}});
+      await win.loadURL('data:text/html;charset=utf-8,'+encodeURIComponent(String(html||'')));
+      win.show();
+      return {ok:true};
+    } catch(error) {return {ok:false,error:String(error)};}
+  });
+  ipcMain.handle('pdf:voucher', async (_event, html) => {
+    const win = new BrowserWindow({show:false,width:420,height:700,webPreferences:{sandbox:true}});
+    try {
+      await win.loadURL('data:text/html;charset=utf-8,'+encodeURIComponent(String(html||'')));
+      const result=await dialog.showSaveDialog(mainWindow,{title:'Guardar voucher en PDF',defaultPath:'voucher-'+Date.now()+'.pdf',filters:[{name:'Documento PDF',extensions:['pdf']}]});
+      if(result.canceled||!result.filePath)return {ok:false,canceled:true};
+      const pdf=await win.webContents.printToPDF({printBackground:true,preferCSSPageSize:false,pageSize:{width:80000,height:160000},margins:{top:0,bottom:0,left:0,right:0}});
+      fs.writeFileSync(result.filePath,pdf);
+      return {ok:true,file:result.filePath};
+    }catch(error){return {ok:false,error:String(error)};}
+    finally{if(!win.isDestroyed())win.close();}
+  });
   ipcMain.handle('print:voucher', async (_event, html) => {
     const win = new BrowserWindow({ show: false, width: 420, height: 700, webPreferences: { sandbox: true } });
     try {
