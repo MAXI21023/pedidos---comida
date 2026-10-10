@@ -121,7 +121,7 @@ def ordenar():
    salsa=''
    if 'hamburg' in (p['tipo'] or '').lower() or 'burger' in (p['nombre'] or '').lower():
     salsas=request.form.getlist('salsa_'+pid)
-    if not 1<=len(salsas)<=3 or len(set(salsas))!=len(salsas) or any(x not in ('Mayonesa','Ketchup','Mostaza','Salsa barbecue','Salsa especial') for x in salsas):
+    if not 1<=len(salsas)<=3 or len(set(salsas))!=len(salsas) or any(x not in ('Mayonesa','Ketchup','Mostaza','Salsa barbecue','Salsa especial') or x in salsas_incluidas(p['nombre'],p['descripcion']) for x in salsas):
      c.close(); flash('Selecciona entre 1 y 3 salsas para '+p['nombre']); return redirect(url_for('menu'))
     salsa=', '.join(salsas)
    items.append(f"{q} x {p['nombre']} ({money(p['precio'])} c/u)"+(f" - Salsa: {salsa}" if salsa else ''))
