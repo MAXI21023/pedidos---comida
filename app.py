@@ -265,18 +265,22 @@ def desktop_set_stock():
  data=request.get_json(silent=True) or {}; products=data.get('products',[])
  if not isinstance(products,list): return jsonify({'error':'Formato de stock no válido'}),400
  c=db(); hoy=datetime.now().date().isoformat()
+ where,args=tenant_clause()
+ updated=0
  for x in products:
   did=str(x.get('id','')).strip()
   try: qty=max(0,int(x.get('stock',0)))
   except: qty=0
   available=1 if x.get('available',True) else 0
-  row=c.execute('SELECT id FROM productos WHERE desktop_id=?',(did,)).fetchone()
+  row=c.execute('SELECT id FROM productos WHERE desktop_id=? AND '+where,[did]+args).fetchone()
   if not row:
-   try: row=c.execute('SELECT id FROM productos WHERE id=?',(int(did),)).fetchone()
-   except: row=None
-  if row: c.execute('UPDATE productos SET stock_diario=?,stock_fecha=?,disponible=? WHERE id=?',(qty,hoy,available,row['id']))
+   try: row=c.execute('SELECT id FROM productos WHERE id=? AND '+where,[int(did)]+args).fetchone()
+   except (ValueError,TypeError): row=None
+  if row:
+   c.execute('UPDATE productos SET stock_diario=?,stock_fecha=?,disponible=? WHERE id=?',(qty,hoy,available,row['id']))
+   updated+=1
  c.commit(); c.close()
- return jsonify({'ok':True})
+ return jsonify({'ok':True,'updated':updated,'requested':len(products)})
 
 @app.get('/api/desktop/health')
 @api_required
