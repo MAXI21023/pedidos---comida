@@ -109,7 +109,12 @@ def ordenar():
   if q:
    if not p['disponible'] or p['stock_diario']<=0 or q>p['stock_diario']:
     c.close(); flash(f"Lo sentimos, ya no quedan suficientes unidades de {p['nombre']}."); return redirect(url_for('menu'))
-   items.append(f"{q} x {p['nombre']} ({money(p['precio'])} c/u)")
+   salsa=''
+   if 'hamburg' in (p['tipo'] or '').lower() or 'burger' in (p['nombre'] or '').lower():
+    salsa=request.form.get('salsa_'+pid,'').strip()
+    if salsa not in ('Mayonesa','Ketchup','Mostaza','Salsa barbecue','Salsa especial'):
+     c.close(); flash('Selecciona una salsa para '+p['nombre']); return redirect(url_for('menu'))
+   items.append(f"{q} x {p['nombre']} ({money(p['precio'])} c/u)"+(f" - Salsa: {salsa}" if salsa else ''))
    structured.append((p['id'],p['nombre'],p['tipo'],q,p['precio'],p['costo']))
    total += q*p['precio']
  if not items:
