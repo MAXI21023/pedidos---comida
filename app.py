@@ -111,9 +111,10 @@ def ordenar():
     c.close(); flash(f"Lo sentimos, ya no quedan suficientes unidades de {p['nombre']}."); return redirect(url_for('menu'))
    salsa=''
    if 'hamburg' in (p['tipo'] or '').lower() or 'burger' in (p['nombre'] or '').lower():
-    salsa=request.form.get('salsa_'+pid,'').strip()
-    if salsa not in ('Mayonesa','Ketchup','Mostaza','Salsa barbecue','Salsa especial'):
-     c.close(); flash('Selecciona una salsa para '+p['nombre']); return redirect(url_for('menu'))
+    salsas=request.form.getlist('salsa_'+pid)
+    if not 1<=len(salsas)<=3 or len(set(salsas))!=len(salsas) or any(x not in ('Mayonesa','Ketchup','Mostaza','Salsa barbecue','Salsa especial') for x in salsas):
+     c.close(); flash('Selecciona entre 1 y 3 salsas para '+p['nombre']); return redirect(url_for('menu'))
+    salsa=', '.join(salsas)
    items.append(f"{q} x {p['nombre']} ({money(p['precio'])} c/u)"+(f" - Salsa: {salsa}" if salsa else ''))
    structured.append((p['id'],p['nombre'],p['tipo'],q,p['precio'],p['costo']))
    total += q*p['precio']
