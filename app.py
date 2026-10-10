@@ -72,6 +72,15 @@ def admin_required(f):
   return f(*a,**k)
  return w
 
+def salsas_incluidas(nombre, descripcion):
+ texto=(' '+str(nombre or '')+' '+str(descripcion or '')+' ').lower()
+ import unicodedata, re
+ texto=''.join(ch for ch in unicodedata.normalize('NFD',texto) if unicodedata.category(ch)!='Mn')
+ reglas={'Mayonesa':r'\b(?:mayonesa|mayo|may[oó] casera)\b','Ketchup':r'\b(?:ketchup|catsup)\b','Mostaza':r'\bmostaza\b','Salsa barbecue':r'\b(?:barbecue|bbq|barbacoa)\b','Salsa especial':r'\b(?:salsa especial|salsa de la casa)\b'}
+ return [nombre for nombre, patron in reglas.items() if re.search(patron,texto)]
+
+app.jinja_env.globals['salsas_incluidas']=salsas_incluidas
+
 @app.route('/')
 def menu():
  c=db(); hoy=datetime.now().date().isoformat()
