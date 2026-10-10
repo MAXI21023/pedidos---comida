@@ -229,13 +229,22 @@ def desktop_update_order(i):
  data=request.get_json(silent=True) or {}
  allowed={'Nuevo','Confirmado','Preparando','Listo','Entregado','Cancelado'}
  c=db()
- row=c.execute('SELECT id FROM pedidos WHERE id=?',(i,)).fetchone()
+ row=c.execute('SELECT id,stock_descontado FROM pedidos WHERE id=?',(i,)).fetchone()
  if not row:
   c.close(); return jsonify({'error':'Pedido no encontrado'}),404
  if 'estado' in data:
   estado=str(data['estado'])
   if estado not in allowed:
    c.close(); return jsonify({'error':'Estado no válido'}),400
+  if estado=='Confirmado' and not row['stock_descontado']:
+   items=c.execute('SELECT producto_id,cantidad,nombre FROM pedido_items WHERE pedido_id=?',(i,)).fetchall()
+   for x in items:
+    p=c.execute('SELECT stock_diario,disponible FROM productos WHERE id=?',(x['producto_id'],)).fetchone()
+    if not p or not p['disponible'] or p['stock_diario']<x['cantidad']:
+     c.close(); return jsonify({'error':'Stock insuficiente para confirmar '+x['nombre']}),409
+   for x in items:
+    c.execute('UPDATE productos SET stock_diario=stock_diario-? WHERE id=?',(x['cantidad'],x['producto_id']))
+   c.execute('UPDATE pedidos SET stock_descontado=1 WHERE id=?',(i,))
   c.execute('UPDATE pedidos SET estado=? WHERE id=?',(estado,i))
  if 'pagado' in data:
   c.execute('UPDATE pedidos SET pagado=? WHERE id=?',(1 if data['pagado'] else 0,i))
