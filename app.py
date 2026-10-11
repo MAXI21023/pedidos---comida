@@ -305,7 +305,7 @@ def desktop_products():
  if not products or any(not isinstance(p,dict) or not str(p.get('id','')).strip() or not str(p.get('name','')).strip() for p in products):
   return jsonify({'error':'Menú vacío o inválido: publicación rechazada para proteger los productos existentes'}),400
  c=db()
- c.execute('UPDATE productos SET activo=0 WHERE desktop_id IS NOT NULL')
+ # Conservar los productos que no vienen en esta publicación: una lista parcial no debe ocultarlos.
  for p in products:
   did=str(p.get('id','')).strip()
   name=str(p.get('name','')).strip()
