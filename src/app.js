@@ -102,9 +102,33 @@ async function saveOrder(showAlert=true){if(!cart.length){alert("Agrega al menos
 async function saveAndWhatsApp(){const o=await saveOrder(false);if(!o)return;openWhatsApp(o);alert("Pedido #"+o.number+" registrado y preparado para WhatsApp.")}
 function orderMessage(o){return `🍔 *PEDIDO #${o.number}*\nCliente: ${o.client}\n\n${o.items.map(x=>`${x.qty} x ${x.name} — ${money(x.price*x.qty)}`).join("\n")}\n\n*TOTAL: ${money(o.total)}*\nEntrega: ${o.delivery}\nPago: ${o.payment}${o.address?`\nDirección: ${o.address}`:""}${o.notes?`\nObservaciones: ${o.notes}`:""}\n\n${state.settings.thanksMessage||"¡Gracias por tu pedido!"}`}
 function openWhatsApp(o){const phone=(o.phone||"").replace(/\D/g,"");const url=phone?`https://wa.me/${phone}?text=${encodeURIComponent(orderMessage(o))}`:`https://wa.me/?text=${encodeURIComponent(orderMessage(o))}`;window.open(url,"_blank")}
-async function setOrderStatus(id,val){const o=state.orders.find(x=>x.id===id);if(!o)return;o.status=val;o.statusChangedAt=Date.now();if(val==="Entregado"){o.delivered=true;o.deliveredAt=new Date().toISOString()}await persist();renderOrders();renderBadges();renderStats();const synced=await syncOrderToServer(o);if(!synced&&o.remoteId){setSyncStatus("warn","Estado guardado localmente · pendiente de servidor");}if(synced&&val==="Confirmado"){await loadDailyStock();}if(["Confirmado","Preparando","Listo","En reparto"].includes(val)){const title=val==="Confirmado"?"Pedido confirmado":val==="Listo"?"Pedido listo":val==="En reparto"?"Pedido en reparto":"Pedido en preparación";await window.desktopAPI.notify(title,`Pedido #${o.number} · ${o.client}`);await openWhatsAppById(id)}}
-async function setPaid(id,val){const o=state.orders.find(x=>x.id===id);if(!o)return;o.paid=val==="true";o.paidAt=o.paid?new Date().toISOString():null;await persist();renderOrders();renderBadges();renderStats();if(o.paid)await window.desktopAPI.notify("Pedido pagado",`Pedido #${o.number} · ${o.client} · ${money(o.total)}`);await syncOrderToServer(o)}
-async function setDelivered(id,val){const o=state.orders.find(x=>x.id===id);if(!o)return;o.delivered=val==="true";o.deliveredAt=o.delivered?new Date().toISOString():null;if(o.delivered)o.status="Entregado";await persist();renderOrders();renderBadges();renderStats();if(o.delivered)await window.desktopAPI.notify("Pedido entregado",`Pedido #${o.number} · ${o.client}`);await syncOrderToServer(o)}
+async function setOrderStatus(id,val){
+ const o=state.orders.find(x=>String(x.id)===String(id));if(!o)return;
+ const previous=o.status;
+ if(o.remoteId&&syncConfigured()){
+  const res=await apiCall("/api/desktop/orders/"+o.remoteId,"PATCH",{estado:val,pagado:Boolean(o.paid)});
+  if(!res.ok){
+   setSyncStatus("warn","No se pudo confirmar: "+(res.error||res.status));
+   alert("No se pudo cambiar el estado del pedido #"+o.number+": "+(res.error||res.status)+". El pedido sigue en "+previous+".");
+   return;
+  }
+  setSyncStatus("on","Pedido actualizado en servidor");
+ }else if(o.remoteId){
+  alert("Sin conexión con el servidor. No se confirmó el pedido web. Revisa la licencia y sincronización.");
+  return;
+ }
+ o.status=val;o.statusChangedAt=Date.now();
+ if(val==="Entregado"){o.delivered=true;o.deliveredAt=new Date().toISOString()}
+ await persist();renderOrders();renderBadges();renderStats();
+ if(o.remoteId&&val==="Confirmado")await loadDailyStock();
+ if(["Confirmado","Preparando","Listo","En reparto"].includes(val)){
+  const title=val==="Confirmado"?"Pedido confirmado":val==="Listo"?"Pedido listo":val==="En reparto"?"Pedido en reparto":"Pedido en preparación";
+  try{await window.desktopAPI.notify(title,`Pedido #${o.number} · ${o.client}`)}catch(e){console.error("Notificación:",e)}
+  await openWhatsAppById(id);
+ }
+}
+async function setPaid(id,val){const o=state.orders.find(x=>String(x.id)===String(id));if(!o)return;o.paid=val==="true";o.paidAt=o.paid?new Date().toISOString():null;await persist();renderOrders();renderBadges();renderStats();if(o.paid)await window.desktopAPI.notify("Pedido pagado",`Pedido #${o.number} · ${o.client} · ${money(o.total)}`);await syncOrderToServer(o)}
+async function setDelivered(id,val){const o=state.orders.find(x=>String(x.id)===String(id));if(!o)return;o.delivered=val==="true";o.deliveredAt=o.delivered?new Date().toISOString():null;if(o.delivered)o.status="Entregado";await persist();renderOrders();renderBadges();renderStats();if(o.delivered)await window.desktopAPI.notify("Pedido entregado",`Pedido #${o.number} · ${o.client}`);await syncOrderToServer(o)}
 async function deleteOrder(id){
  const o=state.orders.find(x=>String(x.id)===String(id));
  if(!o||!confirm("¿Eliminar definitivamente el pedido #"+o.number+"?"))return;
@@ -130,14 +154,14 @@ function statusMessage(o){
  if(o.status==="Entregado")return `✅ Hola ${o.client}, tu pedido #${o.number} fue entregado. ¡Muchas gracias!`;
  return orderMessage(o)
 }
-async function openWhatsAppById(id){const o=state.orders.find(x=>x.id===id);if(!o)return;let phone=String(o.phone||"").replace(/\\D/g,"");if(phone.startsWith("0"))phone=phone.slice(1);if(phone.length===9&&phone.startsWith("9"))phone="56"+phone;if(phone.length===8)phone="569"+phone;const msg=statusMessage(o);if(!phone){alert("Este pedido no tiene un número de WhatsApp válido.");return}const url=`https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(msg)}`;const res=await window.desktopAPI.openExternal(url);if(!res?.ok)alert("No se pudo abrir WhatsApp.");}
+async function openWhatsAppById(id){const o=state.orders.find(x=>String(x.id)===String(id));if(!o)return;let phone=String(o.phone||"").replace(/\\D/g,"");if(phone.startsWith("0"))phone=phone.slice(1);if(phone.length===9&&phone.startsWith("9"))phone="56"+phone;if(phone.length===8)phone="569"+phone;const msg=statusMessage(o);if(!phone){alert("Este pedido no tiene un número de WhatsApp válido.");return}const url=`https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(msg)}`;const res=await window.desktopAPI.openExternal(url);if(!res?.ok)alert("No se pudo abrir WhatsApp.");}
 function voucherHtml(o){
  const items=(o.items||[]).map(x=>`<tr><td>${escapeHtml(x.qty)} x ${escapeHtml(x.name)}</td><td>${money((x.price||0)*(x.qty||0))}</td></tr>`).join("");
  return `<!doctype html><html><head><meta charset="utf-8"><style>@page{size:80mm auto;margin:3mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;width:72mm;margin:0;color:#000;font-size:12px}.center{text-align:center}.order{font-size:22px;font-weight:900}.client{font-size:25px;font-weight:900;margin:8px 0;text-transform:uppercase;border-top:2px dashed #000;border-bottom:2px dashed #000;padding:8px 0}table{width:100%;border-collapse:collapse;font-size:14px}td{padding:5px 0;vertical-align:top}td:last-child{text-align:right;white-space:nowrap}.notes{font-size:16px;font-weight:800;border:2px solid #000;padding:7px;margin:8px 0}.total{font-size:20px;font-weight:900;text-align:right;border-top:2px solid #000;padding-top:7px}.meta{font-size:12px;margin-top:5px}.footer{border-top:2px dashed #000;margin-top:10px;padding-top:7px}</style></head><body><div class="center"><div>${escapeHtml(state.settings.businessName||"PEDIDOS")}</div><div class="order">PEDIDO #${escapeHtml(o.number)}</div><div class="client">${escapeHtml(o.client||"SIN NOMBRE")}</div></div><table>${items}</table>${o.notes?`<div class="notes">OBSERVACIONES:<br>${escapeHtml(o.notes)}</div>`:""}<div class="meta"><b>${escapeHtml(o.delivery||"Retiro")}</b>${o.address?`<br>Dirección: ${escapeHtml(o.address)}`:""}<br>Pago: ${escapeHtml(o.payment||"")}<br>Hora: ${escapeHtml(new Date(o.createdAt||Date.now()).toLocaleTimeString("es-CL",{hour:"2-digit",minute:"2-digit"}))}</div><div class="total">TOTAL: ${money(o.total)}</div><div class="center footer">Gracias</div></body></html>`
 }
-async function previewVoucher(id){const o=state.orders.find(x=>x.id===id);if(!o)return;const res=await window.desktopAPI.previewVoucher(voucherHtml(o));if(!res?.ok)alert("No se pudo abrir la vista previa.");}
-async function saveVoucherPDF(id){const o=state.orders.find(x=>x.id===id);if(!o)return;const res=await window.desktopAPI.saveVoucherPDF(voucherHtml(o));if(!res?.ok&&!res?.canceled)alert("No se pudo guardar el PDF.");}
-async function printVoucher(id){const o=state.orders.find(x=>x.id===id);if(!o)return;const res=await window.desktopAPI.printVoucher(voucherHtml(o));if(!res?.ok)alert("No se pudo imprimir el voucher.");}
+async function previewVoucher(id){const o=state.orders.find(x=>String(x.id)===String(id));if(!o)return;const res=await window.desktopAPI.previewVoucher(voucherHtml(o));if(!res?.ok)alert("No se pudo abrir la vista previa.");}
+async function saveVoucherPDF(id){const o=state.orders.find(x=>String(x.id)===String(id));if(!o)return;const res=await window.desktopAPI.saveVoucherPDF(voucherHtml(o));if(!res?.ok&&!res?.canceled)alert("No se pudo guardar el PDF.");}
+async function printVoucher(id){const o=state.orders.find(x=>String(x.id)===String(id));if(!o)return;const res=await window.desktopAPI.printVoucher(voucherHtml(o));if(!res?.ok)alert("No se pudo imprimir el voucher.");}
 function selectedOrdersForStats(){const from=document.getElementById("cashFrom")?.value,to=document.getElementById("cashTo")?.value;return state.orders.filter(o=>{const d=(o.createdAt||"").slice(0,10);if(from&&d<from)return false;if(to&&d>to)return false;return true})}
 function renderStats(){const list=selectedOrdersForStats(),sales=list.reduce((s,o)=>s+(o.total||0),0),costs=list.reduce((s,o)=>s+(o.cost??o.items.reduce((a,x)=>a+(x.cost||0)*x.qty,0)),0),profit=sales-costs,collected=list.filter(o=>o.paid).reduce((s,o)=>s+o.total,0),pending=sales-collected;document.getElementById("sales").textContent=money(sales);document.getElementById("costs").textContent=money(costs);document.getElementById("profit").textContent=money(profit);document.getElementById("margin").textContent=(sales?profit/sales*100:0).toFixed(1)+"%";document.getElementById("count").textContent=list.length;document.getElementById("avg").textContent=money(list.length?sales/list.length:0);document.getElementById("collected").textContent=money(collected);document.getElementById("pending").textContent=money(pending)}
 function clearCashDates(){document.getElementById("cashFrom").value="";document.getElementById("cashTo").value="";renderStats()}
