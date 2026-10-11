@@ -55,14 +55,18 @@ function renderSoldProducts(){
  const from=document.getElementById("soldFrom")?.value||"";
  const to=document.getElementById("soldTo")?.value||"";
  const orders=state.orders.filter(o=>{const d=orderChileISO(o);return (!from||d>=from)&&(!to||d<=to)});
- const grouped=new Map();let burgers=0,fries=0,others=0;
+ const grouped=new Map();let burgers=0,fries=0,comboFries=0,drinks=0,others=0;
  for(const o of orders){
   for(const x of (Array.isArray(o.items)?o.items:[])){
    const qty=Number(x.qty||0);
    if(!Number.isFinite(qty)||qty<=0)continue;
    const name=String(x.name||"Producto"),type=String(x.type||"").toLowerCase();
-   const category=type.includes("hamburg")||/burger|hamburg|clásica|criolla|bacon crunch/i.test(name)?"burger":/papa|fries|frita/i.test(name)?"fries":"other";
-   if(category==="burger")burgers+=qty;else if(category==="fries")fries+=qty;else others+=qty;
+   const isDrink=/bebida|bebestible|gaseosa|refresco|coca.?cola|sprite|fanta|jugo|agua mineral/i.test(type+" "+name);
+   const isBurger=type.includes("hamburg")||/burger|hamburg|clásica|criolla|bacon crunch/i.test(name);
+   const isFries=/papa|fries|frita/i.test(type+" "+name);
+   const category=isDrink?"drink":isBurger?"burger":isFries?"fries":"other";
+   if(isBurger&&/(con|incluye|\+|y)\s+(porci[oó]n\s+de\s+)?papas|papas\s+(incluidas|fritas\s+incluidas)/i.test(name))comboFries+=qty;
+   if(category==="burger")burgers+=qty;else if(category==="fries")fries+=qty;else if(category==="drink")drinks+=qty;else others+=qty;
    const key=category+"|"+name.toLocaleLowerCase("es");
    const old=grouped.get(key)||{name,category,qty:0,amount:0};
    old.qty+=qty;old.amount+=qty*Number(x.price||0);grouped.set(key,old);
@@ -70,8 +74,11 @@ function renderSoldProducts(){
  }
  document.getElementById("soldBurgers").textContent=burgers.toLocaleString("es-CL");
  document.getElementById("soldFries").textContent=fries.toLocaleString("es-CL");
+ document.getElementById("soldComboFries").textContent=comboFries.toLocaleString("es-CL");
+ document.getElementById("soldAllFries").textContent=(fries+comboFries).toLocaleString("es-CL");
+ document.getElementById("soldDrinks").textContent=drinks.toLocaleString("es-CL");
  document.getElementById("soldOthers").textContent=others.toLocaleString("es-CL");
- document.getElementById("soldUnits").textContent=(burgers+fries+others).toLocaleString("es-CL");
+ document.getElementById("soldUnits").textContent=(burgers+fries+comboFries+drinks+others).toLocaleString("es-CL");
  document.getElementById("soldOrders").textContent=orders.length.toLocaleString("es-CL");
  const list=[...grouped.values()].sort((a,b)=>b.qty-a.qty||a.name.localeCompare(b.name));
  document.getElementById("soldDetails").innerHTML=list.length?'<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr><th style="text-align:left">Producto</th><th>Unidades</th><th>Venta de productos</th></tr></thead><tbody>'+list.map(x=>'<tr><td>'+escapeHtml(x.name)+'</td><td style="text-align:center">'+x.qty.toLocaleString("es-CL")+'</td><td style="text-align:right">'+money(x.amount)+'</td></tr>').join("")+'</tbody></table></div>':'No hay productos vendidos en el período seleccionado.';
