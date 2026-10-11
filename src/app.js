@@ -247,7 +247,8 @@ async function pullRemoteOrders(showFeedback=false){
  state.settings.syncInitialized=true;await persist();renderOrders();renderBadges();renderStats();setSyncStatus("on",`Pedidos conectados · ${rows.length} en servidor${added?" · "+added+" nuevo(s)":""}`);if(showFeedback)alert(`Recepción de pedidos correcta. ${rows.length} en servidor, ${added} nuevos descargados.`);return true
 }
 async function pushProducts(showFeedback=false){
- if(!syncConfigured())return false;
+ if(!syncConfigured()){if(showFeedback)alert("No hay conexión configurada con el servidor.");return false}
+ if(!state.products.length){if(showFeedback)alert("No se publicará un menú vacío. Revisa los productos guardados.");return false}
  const res=await apiCall("/api/desktop/products","POST",{products:state.products});
  if(!res.ok){setSyncStatus("warn",res.error||"No se pudo publicar el menú");if(showFeedback)alert("No se pudo publicar el menú: "+(res.error||res.status));return false}
  setSyncStatus("on",`Menú publicado · ${state.products.filter(p=>p.active).length} activos`);if(showFeedback)alert(`Menú publicado: ${state.products.filter(p=>p.active).length} productos activos de ${state.products.length} registrados. Revisa la página de clientes y el stock del día.`);return true
