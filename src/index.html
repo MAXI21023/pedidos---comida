@@ -29,6 +29,7 @@
     <button class="active" onclick="goTab('new',this)">Nuevo pedido</button>
     <button onclick="goTab('orders',this)">Pedidos</button>
     <button onclick="goTab('cash',this)">Caja y ganancias</button>
+    <button onclick="goTab('sold',this)">🍔 Productos vendidos</button>
     <button onclick="goTab('admin',this)">Administrar menú</button>
     <button onclick="goTab('settings',this)">Configuración</button>
   </div>
@@ -81,7 +82,28 @@
     </div>
   </section>
 
-  <section id="cash" class="hidden">
+  <section id="sold" class="hidden">
+  <div class="card">
+    <h2>🍔 Productos vendidos</h2>
+    <div class="muted">Unidades registradas en pedidos. Cada hamburguesa y cada porción de papas cuenta individualmente.</div>
+    <div class="three topgap">
+      <div><label>Desde</label><input type="date" id="soldFrom" onchange="renderSoldProducts()"></div>
+      <div><label>Hasta</label><input type="date" id="soldTo" onchange="renderSoldProducts()"></div>
+      <div class="align-bottom"><button class="secondary full" onclick="clearSoldDates()">Ver todo el historial</button></div>
+    </div>
+    <div class="stats topgap">
+      <div class="stat"><span>Hamburguesas vendidas</span><b id="soldBurgers">0</b></div>
+      <div class="stat"><span>Porciones de papas</span><b id="soldFries">0</b></div>
+      <div class="stat"><span>Otros productos</span><b id="soldOthers">0</b></div>
+      <div class="stat"><span>Unidades totales</span><b id="soldUnits">0</b></div>
+      <div class="stat"><span>Pedidos del período</span><b id="soldOrders">0</b></div>
+    </div>
+    <h3 class="topgap">Detalle por producto</h3>
+    <div id="soldDetails" class="topgap muted">Sin ventas registradas.</div>
+  </div>
+</section>
+
+<section id="cash" class="hidden">
     <div class="card">
       <div class="row between wrap"><div><h2>Caja y rentabilidad</h2><div class="muted">Resumen por el rango de fechas que selecciones.</div></div></div>
       <div class="stats">
