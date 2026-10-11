@@ -202,7 +202,7 @@ async function importBackup(){try{const data=await window.desktopAPI.importBacku
 async function exportOrdersCSV(){const headers=["N°","Fecha","Cliente","Teléfono","Total","Costo","Utilidad","Pagado","Entregado","Estado","Entrega","Pago","Productos"],rows=state.orders.map(o=>[o.number,o.date,o.client,o.phone,o.total,o.cost??0,o.total-(o.cost??0),o.paid?"Sí":"No",o.delivered?"Sí":"No",o.status,o.delivery,o.payment,o.items.map(i=>`${i.qty}x ${i.name}`).join(" | ")]),esc=v=>`"${String(v??"").replace(/"/g,'""')}"`,csv=[headers,...rows].map(r=>r.map(esc).join(";")).join("\n");const ok=await window.desktopAPI.exportCSV(csv);if(ok)alert("CSV exportado.")}
 
 
-function syncConfigured(){return Boolean(state.settings.serverUrl&&(state.settings.sessionToken||state.settings.apiKey))}
+function syncConfigured(){return Boolean(state.settings.serverUrl&&state.settings.apiKey)}
 function setSyncStatus(kind,text){const b=document.getElementById("syncBadge"),m=document.getElementById("syncMessage");if(b){b.classList.remove("sync-on","sync-warn","sync-off");b.classList.add(kind==="on"?"sync-on":kind==="warn"?"sync-warn":"sync-off");b.textContent=(kind==="on"?"☁️ ":"⚠️ ")+text}if(m)m.textContent=text}
 async function apiCall(path,method="GET",body=null){if(!syncConfigured())return{ok:false,status:0,error:"Activa la licencia o configura la sincronización."};return window.desktopAPI.serverRequest({baseUrl:state.settings.serverUrl,apiKey:state.settings.apiKey,sessionToken:state.settings.sessionToken,path,method,body})}
 async function activateLicense(){
@@ -249,12 +249,12 @@ async function pullRemoteOrders(showFeedback=false){
  state.settings.syncInitialized=true;await persist();renderOrders();renderBadges();renderStats();setSyncStatus("on",`Pedidos conectados · ${rows.length} en servidor${added?" · "+added+" nuevo(s)":""}`);if(showFeedback)alert(`Recepción de pedidos correcta. ${rows.length} en servidor, ${added} nuevos descargados.`);return true
 }
 async function pushProducts(showFeedback=false){
- if(!syncConfigured()){if(showFeedback)alert("No hay conexión configurada con el servidor.");return false}
+ if(!syncConfigured()){setSyncStatus("off","Falta clave API del servidor");if(showFeedback)alert("La página de Render requiere una clave API. Configura en la app la misma API_KEY que está guardada en Render.");return false}
  if(!state.products.length){if(showFeedback)alert("No se publicará un menú vacío. Revisa los productos guardados.");return false}
  if(!state.products.some(p=>p.active)){if(showFeedback)alert("No hay productos activos para publicar. Actívalos en Administrar menú.");return false}
  if(state.products.length<=3){setSyncStatus("warn","Menú incompleto: publicación bloqueada");if(showFeedback)alert("Solo hay "+state.products.length+" productos en esta instancia. Se bloqueó la publicación para proteger el menú web.");return false}
  const res=await apiCall("/api/desktop/products","POST",{products:state.products});
- if(!res.ok){setSyncStatus("warn",res.error||"No se pudo publicar el menú");if(showFeedback)alert("No se pudo publicar el menú: "+(res.error||res.status));return false}
+ if(!res.ok){const msg=res.status===401?"Clave API incorrecta o no configurada en Render":(res.error||"No se pudo publicar el menú");setSyncStatus("warn",msg);if(showFeedback)alert("No se pudo publicar el menú: "+msg);return false}
  setSyncStatus("on",`Menú publicado · ${state.products.filter(p=>p.active).length} activos`);if(showFeedback)alert(`Menú publicado: ${state.products.filter(p=>p.active).length} productos activos de ${state.products.length} registrados. Revisa la página de clientes y el stock del día.`);return true
 }
 async function syncOrderToServer(o){
@@ -309,7 +309,7 @@ async function publishMenuOnStartup(){
  if(!ok){menuStartupPublishDone=false;console.warn("Menú web pendiente de publicación");}
 }
 
-async function syncNow(showFeedback=false){if(syncBusy)return false;if(!syncConfigured()){setSyncStatus("off","Configura la sincronización");if(showFeedback)alert("Ingresa la URL de Render y la clave de sincronización.");return false}syncBusy=true;try{const ok=await pullRemoteOrders(showFeedback);if(ok)await loadDailyStock();return ok}catch(e){setSyncStatus("off","Error recibiendo pedidos: "+(e?.message||e));if(showFeedback)alert("Error recibiendo pedidos: "+(e?.message||e));return false}finally{syncBusy=false}}
+async function syncNow(showFeedback=false){if(syncBusy)return false;if(!syncConfigured()){setSyncStatus("off","Falta clave API de Render");if(showFeedback)alert("Configura la URL y la misma clave API que está en Render.");return false}syncBusy=true;try{const ok=await pullRemoteOrders(showFeedback);if(ok)await loadDailyStock();return ok}catch(e){setSyncStatus("off","Error recibiendo pedidos: "+(e?.message||e));if(showFeedback)alert("Error recibiendo pedidos: "+(e?.message||e));return false}finally{syncBusy=false}}
 function startServerSync(){if(syncConfigured()){setSyncStatus("warn","Conectando…");syncNow(false);publishMenuOnStartup().catch(e=>console.error("Publicación menú",e));pullOrderActivity().catch(e=>console.error("Actividad web",e))}else setSyncStatus("off","Sin conexión");if(syncTimersStarted)return;syncTimersStarted=true;setInterval(()=>syncNow(false),5000);setInterval(()=>publishMenuOnStartup().catch(e=>console.error("Reintento menú",e)),60000);setInterval(()=>pullOrderActivity().catch(e=>console.error("Actividad web",e)),5000)}
 
 window.addEventListener("beforeunload",()=>{window.desktopAPI.setData(state)});
