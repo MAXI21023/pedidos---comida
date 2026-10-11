@@ -114,7 +114,7 @@
     <div class="card">
       <div class="row between wrap">
         <div><h2>Administrar menú</h2><div class="muted">Los costos y márgenes son solo información interna.</div></div>
-        <button class="primary" onclick="openProductModal()">+ Nuevo producto</button>
+        <div class="row wrap"><button class="secondary" onclick="pushProducts(true)">☁️ Publicar menú en la web</button><button class="primary" onclick="openProductModal()">+ Nuevo producto</button></div>
       </div>
       <div class="tablewrap">
         <table class="table"><thead><tr><th>Producto</th><th>Tipo</th><th>Costo</th><th>Venta</th><th>Utilidad</th><th>Margen</th><th>Estado</th><th>Acciones</th></tr></thead><tbody id="adminRows"></tbody></table>
