@@ -226,7 +226,7 @@ def desktop_health():
 @api_required
 def desktop_orders():
  c=db()
- rows=c.execute('SELECT * FROM pedidos ORDER BY id DESC LIMIT 200').fetchall()
+ rows=c.execute('SELECT * FROM pedidos ORDER BY id DESC').fetchall()
  result=[]
  for r in rows:
   items=c.execute('SELECT producto_id,nombre,tipo,cantidad,precio,costo FROM pedido_items WHERE pedido_id=? ORDER BY id',(r['id'],)).fetchall()
