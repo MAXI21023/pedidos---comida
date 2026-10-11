@@ -302,8 +302,10 @@ def desktop_products():
  products=data.get('products',[])
  if not isinstance(products,list):
   return jsonify({'error':'Formato de productos no válido'}),400
+ if not products or any(not isinstance(p,dict) or not str(p.get('id','')).strip() or not str(p.get('name','')).strip() for p in products):
+  return jsonify({'error':'Menú vacío o inválido: publicación rechazada para proteger los productos existentes'}),400
  c=db()
- c.execute('UPDATE productos SET activo=0')
+ c.execute('UPDATE productos SET activo=0 WHERE desktop_id IS NOT NULL')
  for p in products:
   did=str(p.get('id','')).strip()
   name=str(p.get('name','')).strip()
