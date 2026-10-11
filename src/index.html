@@ -45,7 +45,7 @@
       <aside class="card sticky-card">
         <h2>Pedido actual</h2>
         <div id="cart"><div class="muted">Agrega productos desde el menú.</div></div>
-        <div class="total">Total: <span id="total">$0</span></div>
+        <div class="total">Total con propina: <span id="total">$0</span></div><div class="smalltxt">Productos + reparto: <b id="orderSubtotal">$0</b> · Propina: <b id="orderTipPreview">$0</b></div>
         <div class="smalltxt">Costo interno: <b id="cartCost">$0</b> · Utilidad: <b id="cartProfit">$0</b> · Margen: <b id="cartMargin">0%</b></div>
         <label>Cliente</label><input id="client" placeholder="Nombre del cliente">
         <label>Teléfono / WhatsApp</label><input id="phone" inputmode="tel" placeholder="Ej: 56912345678">
@@ -54,7 +54,7 @@
           <div><label>Forma de pago</label><select id="payment"><option>Efectivo</option><option>Transferencia</option></select></div>
         </div>
         <label>Dirección / referencia</label><input id="address" placeholder="Completar si es delivery">
-        <label>Observaciones</label><textarea id="notes" placeholder="Sin pepinillos, extra salsa, etc."></textarea>
+        <label>Propina voluntaria ($)</label><input id="newOrderTip" type="number" min="0" step="1" value="0" oninput="renderCart()" placeholder="0"><label>Observaciones</label><textarea id="notes" placeholder="Sin pepinillos, extra salsa, etc."></textarea>
         <div class="two">
           <button class="primary full" onclick="saveOrder()">Registrar</button>
           <button class="success full" onclick="saveAndWhatsApp()">Registrar + WhatsApp</button>
