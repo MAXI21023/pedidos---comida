@@ -94,6 +94,7 @@
         <div class="stat"><span>Cobrado</span><b class="green" id="collected">$0</b></div>
         <div class="stat"><span>Por cobrar</span><b class="red" id="pending">$0</b></div>
       </div>
+      <div class="card topgap"><h3>Cuadratura bancaria (no modifica pedidos)</h3><label>Ingresos reales en la cuenta, solo del período seleccionado ($)</label><input id="bankActual" type="number" min="0" step="1" value="192627" oninput="renderStats()"><div id="cashAudit" class="muted"></div></div>
       <div class="three topgap">
         <div><label>Desde</label><input type="date" id="cashFrom" onchange="renderStats()"></div>
         <div><label>Hasta</label><input type="date" id="cashTo" onchange="renderStats()"></div>
