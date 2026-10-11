@@ -304,6 +304,8 @@ def desktop_products():
   return jsonify({'error':'Formato de productos no válido'}),400
  if not products or any(not isinstance(p,dict) or not str(p.get('id','')).strip() or not str(p.get('name','')).strip() for p in products):
   return jsonify({'error':'Menú vacío o inválido: publicación rechazada para proteger los productos existentes'}),400
+ if len(products)<=3:
+  return jsonify({'error':'Publicación bloqueada: solo se recibieron 3 productos. El menú completo no será reemplazado.'}),409
  c=db()
  # La app envía el catálogo completo: ocultar versiones antiguas sin borrarlas ni afectar pedidos.
  c.execute("UPDATE productos SET activo=0")
