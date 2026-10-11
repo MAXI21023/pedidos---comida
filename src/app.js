@@ -42,6 +42,42 @@ async function init(){
   if(saved && Array.isArray(saved.products) && saved.products.length && saved.products.some(p=>p.active)) publishMenuOnStartup();
 }
 
+
+function orderChileISO(o){
+ const raw=o.createdAt||"";
+ const d=new Date(raw);
+ if(Number.isNaN(d.getTime()))return String(raw).slice(0,10);
+ const parts=new Intl.DateTimeFormat("en-US",{timeZone:"America/Santiago",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(d);
+ const v=Object.fromEntries(parts.map(x=>[x.type,x.value]));
+ return v.year+"-"+v.month+"-"+v.day;
+}
+function renderSoldProducts(){
+ const from=document.getElementById("soldFrom")?.value||"";
+ const to=document.getElementById("soldTo")?.value||"";
+ const orders=state.orders.filter(o=>{const d=orderChileISO(o);return (!from||d>=from)&&(!to||d<=to)});
+ const grouped=new Map();let burgers=0,fries=0,others=0;
+ for(const o of orders){
+  for(const x of (Array.isArray(o.items)?o.items:[])){
+   const qty=Number(x.qty||0);
+   if(!Number.isFinite(qty)||qty<=0)continue;
+   const name=String(x.name||"Producto"),type=String(x.type||"").toLowerCase();
+   const category=type.includes("hamburg")||/burger|hamburg|clásica|criolla|bacon crunch/i.test(name)?"burger":/papa|fries|frita/i.test(name)?"fries":"other";
+   if(category==="burger")burgers+=qty;else if(category==="fries")fries+=qty;else others+=qty;
+   const key=category+"|"+name.toLocaleLowerCase("es");
+   const old=grouped.get(key)||{name,category,qty:0,amount:0};
+   old.qty+=qty;old.amount+=qty*Number(x.price||0);grouped.set(key,old);
+  }
+ }
+ document.getElementById("soldBurgers").textContent=burgers.toLocaleString("es-CL");
+ document.getElementById("soldFries").textContent=fries.toLocaleString("es-CL");
+ document.getElementById("soldOthers").textContent=others.toLocaleString("es-CL");
+ document.getElementById("soldUnits").textContent=(burgers+fries+others).toLocaleString("es-CL");
+ document.getElementById("soldOrders").textContent=orders.length.toLocaleString("es-CL");
+ const list=[...grouped.values()].sort((a,b)=>b.qty-a.qty||a.name.localeCompare(b.name));
+ document.getElementById("soldDetails").innerHTML=list.length?'<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr><th style="text-align:left">Producto</th><th>Unidades</th><th>Venta de productos</th></tr></thead><tbody>'+list.map(x=>'<tr><td>'+escapeHtml(x.name)+'</td><td style="text-align:center">'+x.qty.toLocaleString("es-CL")+'</td><td style="text-align:right">'+money(x.amount)+'</td></tr>').join("")+'</tbody></table></div>':'No hay productos vendidos en el período seleccionado.';
+}
+function clearSoldDates(){document.getElementById("soldFrom").value="";document.getElementById("soldTo").value="";renderSoldProducts()}
+
 function renderAll(){
   document.getElementById("brandName").textContent=(state.settings.businessName||"Mi Hamburguesería").toUpperCase();
   document.getElementById("businessName").value=state.settings.businessName||"";
@@ -50,9 +86,9 @@ function renderAll(){
   document.getElementById("serverUrl").value=state.settings.serverUrl||"";
   document.getElementById("apiKey").value=state.settings.apiKey||"";
   renderLicenseStatus();
-  renderProducts();renderCart();renderBadges();renderOrders();renderStats();renderAdmin();renderInventory();renderDailyStock();
+  renderProducts();renderCart();renderBadges();renderOrders();renderStats();renderSoldProducts();renderAdmin();renderInventory();renderDailyStock();
 }
-function goTab(id,btn){["new","orders","cash","admin","settings"].forEach(x=>document.getElementById(x).classList.toggle("hidden",x!==id));document.querySelectorAll(".nav button").forEach(x=>x.classList.remove("active"));btn.classList.add("active");if(id==="orders")renderOrders();if(id==="cash")renderStats();if(id==="admin"){renderAdmin();renderInventory()}}
+function goTab(id,btn){["new","orders","cash","sold","admin","settings"].forEach(x=>document.getElementById(x).classList.toggle("hidden",x!==id));document.querySelectorAll(".nav button").forEach(x=>x.classList.remove("active"));btn.classList.add("active");if(id==="orders")renderOrders();if(id==="cash")renderStats();if(id==="sold")renderSoldProducts();if(id==="admin"){renderAdmin();renderInventory()}}
 function fillCategoryFilter(){const sel=document.getElementById("categoryFilter"),current=sel.value||"all",cats=[...new Set(state.products.map(p=>p.type).filter(Boolean))].sort();sel.innerHTML='<option value="all">Todas las categorías</option>'+cats.map(c=>`<option ${c===current?"selected":""}>${escapeHtml(c)}</option>`).join("")}
 
 let stockEditing=false;
