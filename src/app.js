@@ -251,6 +251,7 @@ async function pullRemoteOrders(showFeedback=false){
 async function pushProducts(showFeedback=false){
  if(!syncConfigured()){if(showFeedback)alert("No hay conexión configurada con el servidor.");return false}
  if(!state.products.length){if(showFeedback)alert("No se publicará un menú vacío. Revisa los productos guardados.");return false}
+ if(!state.products.some(p=>p.active)){if(showFeedback)alert("No hay productos activos para publicar. Actívalos en Administrar menú.");return false}
  const res=await apiCall("/api/desktop/products","POST",{products:state.products});
  if(!res.ok){setSyncStatus("warn",res.error||"No se pudo publicar el menú");if(showFeedback)alert("No se pudo publicar el menú: "+(res.error||res.status));return false}
  setSyncStatus("on",`Menú publicado · ${state.products.filter(p=>p.active).length} activos`);if(showFeedback)alert(`Menú publicado: ${state.products.filter(p=>p.active).length} productos activos de ${state.products.length} registrados. Revisa la página de clientes y el stock del día.`);return true
@@ -308,7 +309,7 @@ async function publishMenuOnStartup(){
 }
 
 async function syncNow(showFeedback=false){if(syncBusy)return false;if(!syncConfigured()){setSyncStatus("off","Configura la sincronización");if(showFeedback)alert("Ingresa la URL de Render y la clave de sincronización.");return false}syncBusy=true;try{const ok=await pullRemoteOrders(showFeedback);if(ok)await loadDailyStock();return ok}catch(e){setSyncStatus("off","Error recibiendo pedidos: "+(e?.message||e));if(showFeedback)alert("Error recibiendo pedidos: "+(e?.message||e));return false}finally{syncBusy=false}}
-function startServerSync(){if(syncConfigured()){setSyncStatus("warn","Conectando…");syncNow(false);publishMenuOnStartup().catch(e=>console.error("Publicación menú",e));pullOrderActivity().catch(e=>console.error("Actividad web",e))}else setSyncStatus("off","Sin conexión");if(syncTimersStarted)return;syncTimersStarted=true;setInterval(()=>syncNow(false),5000);setInterval(()=>pullOrderActivity().catch(e=>console.error("Actividad web",e)),5000)}
+function startServerSync(){if(syncConfigured()){setSyncStatus("warn","Conectando…");syncNow(false);publishMenuOnStartup().catch(e=>console.error("Publicación menú",e));pullOrderActivity().catch(e=>console.error("Actividad web",e))}else setSyncStatus("off","Sin conexión");if(syncTimersStarted)return;syncTimersStarted=true;setInterval(()=>syncNow(false),5000);setInterval(()=>publishMenuOnStartup().catch(e=>console.error("Reintento menú",e)),60000);setInterval(()=>pullOrderActivity().catch(e=>console.error("Actividad web",e)),5000)}
 
 window.addEventListener("beforeunload",()=>{window.desktopAPI.setData(state)});
 setInterval(()=>persist(),15000);
