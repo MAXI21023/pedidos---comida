@@ -65,7 +65,7 @@ function renderSoldProducts(){
    const isBurger=type.includes("hamburg")||/burger|hamburg|clásica|criolla|bacon crunch/i.test(name);
    const isFries=/papa|fries|frita/i.test(type+" "+name);
    const category=isDrink?"drink":isBurger?"burger":isFries?"fries":"other";
-   if(isBurger&&/(con|incluye|\+|y)\s+(porci[oó]n\s+de\s+)?papas|papas\s+(incluidas|fritas\s+incluidas)/i.test(name))comboFries+=qty;
+   if(isBurger)comboFries+=qty;
    if(category==="burger")burgers+=qty;else if(category==="fries")fries+=qty;else if(category==="drink")drinks+=qty;else others+=qty;
    const key=category+"|"+name.toLocaleLowerCase("es");
    const old=grouped.get(key)||{name,category,qty:0,amount:0};
