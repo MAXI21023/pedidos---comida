@@ -238,9 +238,11 @@ async function pullRemoteOrders(showFeedback=false){
  if(!res.ok){setSyncStatus("off",res.error||"Sin conexión");if(showFeedback)alert("No se pudo sincronizar: "+(res.error||res.status));return false}
  const rows=Array.isArray(res.data)?res.data:[],first=!state.settings.syncInitialized;let added=0;
  for(const r of rows.slice().reverse()){
+  try{
   const found=state.orders.find(o=>Number(o.remoteId)===Number(r.id));
   if(found){const fresh=remoteToLocal(r);const keepLocal=Boolean(found.statusChangedAt);Object.assign(found,{client:fresh.client,phone:fresh.phone,delivery:fresh.delivery,payment:fresh.payment,address:fresh.address,notes:fresh.notes,items:fresh.items,total:fresh.total,cost:fresh.cost,profit:fresh.profit,paid:keepLocal?found.paid:fresh.paid,delivered:keepLocal?found.delivered:fresh.delivered,status:keepLocal?found.status:fresh.status})}
   else{const fresh=remoteToLocal(r);state.orders.unshift(fresh);added++;if(!first){try{await window.desktopAPI.notify("Nuevo pedido web",`Pedido #${fresh.number} · ${fresh.client} · ${money(fresh.total)}`)}catch(e){console.error("Notificación de pedido",e)}}}
+  }catch(e){console.error("Error al procesar pedido web",r?.id,e)}
  }
  state.settings.syncInitialized=true;await persist();renderOrders();renderBadges();renderStats();setSyncStatus("on",`Pedidos conectados · ${rows.length} en servidor${added?" · "+added+" nuevo(s)":""}`);if(showFeedback)alert(`Recepción de pedidos correcta. ${rows.length} en servidor, ${added} nuevos descargados.`);return true
 }
