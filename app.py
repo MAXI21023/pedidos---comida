@@ -305,7 +305,8 @@ def desktop_products():
  if not products or any(not isinstance(p,dict) or not str(p.get('id','')).strip() or not str(p.get('name','')).strip() for p in products):
   return jsonify({'error':'Menú vacío o inválido: publicación rechazada para proteger los productos existentes'}),400
  c=db()
- # Conservar los productos que no vienen en esta publicación: una lista parcial no debe ocultarlos.
+ # La app envía el catálogo completo: ocultar versiones antiguas sin borrarlas ni afectar pedidos.
+ c.execute("UPDATE productos SET activo=0")
  for p in products:
   did=str(p.get('id','')).strip()
   name=str(p.get('name','')).strip()
@@ -317,7 +318,7 @@ def desktop_products():
   activo=1 if p.get('active',True) else 0
   old=c.execute('SELECT id FROM productos WHERE desktop_id=?',(did,)).fetchone()
   if old:
-   c.execute('UPDATE productos SET nombre=?,tipo=?,descripcion=?,precio=?,costo=?,activo=? WHERE desktop_id=?',(name,tipo,desc,precio,costo,activo,did))
+   c.execute('UPDATE productos SET nombre=?,tipo=?,descripcion=?,precio=?,costo=?,activo=? WHERE id=?',(name,tipo,desc,precio,costo,activo,old['id']))
   else:
    c.execute('INSERT INTO productos(nombre,tipo,precio,costo,activo,desktop_id,descripcion) VALUES(?,?,?,?,?,?,?)',(name,tipo,precio,costo,activo,did,desc))
  c.commit(); c.close()
