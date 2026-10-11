@@ -252,6 +252,7 @@ async function pushProducts(showFeedback=false){
  if(!syncConfigured()){if(showFeedback)alert("No hay conexión configurada con el servidor.");return false}
  if(!state.products.length){if(showFeedback)alert("No se publicará un menú vacío. Revisa los productos guardados.");return false}
  if(!state.products.some(p=>p.active)){if(showFeedback)alert("No hay productos activos para publicar. Actívalos en Administrar menú.");return false}
+ if(state.products.length<=3){setSyncStatus("warn","Menú incompleto: publicación bloqueada");if(showFeedback)alert("Solo hay "+state.products.length+" productos en esta instancia. Se bloqueó la publicación para proteger el menú web.");return false}
  const res=await apiCall("/api/desktop/products","POST",{products:state.products});
  if(!res.ok){setSyncStatus("warn",res.error||"No se pudo publicar el menú");if(showFeedback)alert("No se pudo publicar el menú: "+(res.error||res.status));return false}
  setSyncStatus("on",`Menú publicado · ${state.products.filter(p=>p.active).length} activos`);if(showFeedback)alert(`Menú publicado: ${state.products.filter(p=>p.active).length} productos activos de ${state.products.length} registrados. Revisa la página de clientes y el stock del día.`);return true
