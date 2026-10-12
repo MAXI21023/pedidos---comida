@@ -12,5 +12,13 @@ contextBridge.exposeInMainWorld('desktopAPI', {
   exportBackup: (data) => ipcRenderer.invoke('backup:export', data),
   importBackup: () => ipcRenderer.invoke('backup:import'),
   exportCSV: (csv) => ipcRenderer.invoke('csv:export', csv),
-  serverRequest: (request) => ipcRenderer.invoke('server:request', request)
+  serverRequest: (request) => ipcRenderer.invoke('server:request', request),
+  onSaveAndClose: (callback) => ipcRenderer.on('app:save-and-close', () => {
+    Promise.resolve().then(callback).then(
+      () => ipcRenderer.send('app:save-complete', {ok:true}),
+      error => ipcRenderer.send('app:save-complete', {
+        ok:false,error:String(error?.message || error || 'No fue posible guardar')
+      })
+    );
+  })
 });
