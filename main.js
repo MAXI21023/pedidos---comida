@@ -106,6 +106,120 @@ function readValidated(file) {
   if (!validData(value)) throw new Error('Estructura de datos inválida');
   return value;
 }
+
+// Carpeta unica para la aplicacion instalada y la ejecutada con "npm start".
+// El nombre anterior dependia del modo de inicio de Electron.
+const STABLE_DATA_FOLDER='cl.gestorpedidos.desktop';
+function stableStoragePaths() {
+  const root=app.getPath('appData');
+  const shared=path.join(root,STABLE_DATA_FOLDER);
+  const directories=[shared,app.getPath('userData'),
+    path.join(root,'Gestor de Pedidos'),
+    path.join(root,'gestor-pedidos-whatsapp'),
+    path.join(root,'Gestor-de-Pedidos'),
+    path.join(root,'gestor-pedidos')];
+  return {shared,directories:[...new Set(directories.map(d=>path.resolve(d)))]};
+}
+function existingDataCandidates(dir) {
+  const primary=path.join(dir,'gestor-pedidos-data.json');
+  const backups=[primary,primary+'.tmp',primary+'.bak',
+    ...Array.from({length:10},(_,i)=>primary+'.bak.'+(i+1))];
+  const daily=path.join(dir,'daily-backups');
+  if(fs.existsSync(daily)) {
+    backups.push(...fs.readdirSync(daily)
+      .filter(n=>/^gestor-pedidos-\d{4}-\d{2}-\d{2}\.json$/.test(n))
+      .map(n=>path.join(daily,n)));
+  }
+  return backups.filter(p=>fs.existsSync(p)&&fs.statSync(p).isFile());
+}
+function readStoreCandidates(dir) {
+  const files=existingDataCandidates(dir),possible=[];
+  for(const file of files) {
+    try {
+      const value=readValidated(file);
+      possible.push({dir,file,value,mtime:fs.statSync(file).mtimeMs,
+        orderCount:value.orders.length,productCount:value.products.length});
+    } catch(error) {console.warn('Copia local no valida:',file,error.message)}
+  }
+  if(!possible.length) {
+    if(files.length) throw new Error('Hay archivos de pedidos en '+dir+
+      ', pero ninguno se puede leer. No se iniciara con datos vacios.');
+    return null;
+  }
+  const primary=path.join(dir,'gestor-pedidos-data.json');
+  const main=possible.find(c=>c.file===primary);
+  // Si el archivo principal esta vacio pero un respaldo tiene ventas,
+  // preferir ese respaldo antes de arriesgar la perdida total.
+  if(main&&main.orderCount&&main.productCount)return main;
+  const richest=possible.sort((a,b)=>b.orderCount-a.orderCount||
+    b.productCount-a.productCount||b.mtime-a.mtime)[0];
+  if(!main)return richest;
+  return richest.orderCount>main.orderCount||richest.productCount>main.productCount
+    ?richest:main;
+}
+function backupAllStoresBeforeMigration(sources,shared) {
+  const backupRoot=path.join(shared,'migration-backups');
+  const dest=path.join(backupRoot,new Date().toISOString().replace(/[:.]/g,'-')+
+    '-'+process.pid);
+  fs.mkdirSync(dest,{recursive:true,mode:0o700});
+  for(let i=0;i<sources.length;i++){
+    const source=sources[i],folder=path.join(dest,'source-'+(i+1));
+    fs.mkdirSync(folder,{recursive:true,mode:0o700});
+    for(const file of existingDataCandidates(source.dir)){
+      const base=path.basename(file);
+      const name=path.basename(path.dirname(file))==='daily-backups'
+        ?'daily-'+base:base;
+      fs.copyFileSync(file,path.join(folder,name),fs.constants.COPYFILE_EXCL);
+    }
+    const device=path.join(source.dir,'device-id.txt');
+    if(fs.existsSync(device))fs.copyFileSync(device,path.join(folder,'device-id.txt'),fs.constants.COPYFILE_EXCL);
+  }
+  return dest;
+}
+function prepareStableStorage() {
+  const {shared,directories}=stableStoragePaths();
+  const stores=directories.map(readStoreCandidates).filter(Boolean);
+  fs.mkdirSync(shared,{recursive:true,mode:0o700});
+  if(stores.length) {
+    // Nunca seleccionar una version que deje pedidos exclusivos en otra carpeta.
+    const sorted=[...stores].sort((a,b)=>b.orderCount-a.orderCount||
+      b.mtime-a.mtime||b.productCount-a.productCount);
+    const chosen=sorted[0];
+    const keys=new Set(chosen.value.orders.map(o=>String(o.id)));
+    const conflicting=sorted.slice(1).filter(source=>
+      source.value.orders.some(o=>!keys.has(String(o.id))));
+    if(conflicting.length){
+      throw new Error('Se encontraron distintas carpetas con pedidos que no estan en las otras. '+
+        'Se bloqueo la migracion para evitar perderlos. Carpetas: '+
+        sorted.map(x=>x.dir+' ('+x.orderCount+' pedidos)').join(' ; '));
+    }
+    const target=path.join(shared,'gestor-pedidos-data.json');
+    if(chosen.file!==target){
+      const snapshot=backupAllStoresBeforeMigration(stores,shared);
+      const temp=target+'.migrate-'+process.pid+'.tmp';
+      fs.copyFileSync(chosen.file,temp,fs.constants.COPYFILE_EXCL);
+      try {
+        readValidated(temp);
+        fs.renameSync(temp,target);
+      }catch(error){try{fs.unlinkSync(temp)}catch{};throw error}
+      const device=path.join(chosen.dir,'device-id.txt');
+      const stableDevice=path.join(shared,'device-id.txt');
+      if(!fs.existsSync(stableDevice)&&fs.existsSync(device))
+        fs.copyFileSync(device,stableDevice,fs.constants.COPYFILE_EXCL);
+      console.log('Almacenamiento unificado; copia de seguridad:',snapshot);
+    }
+  }
+  // Electron requiere que exista antes de fijar la ruta.
+  app.setPath('userData',shared);
+  return shared;
+}
+let startupStorageError=null;
+try {prepareStableStorage()}
+catch(error) {
+  startupStorageError=error;
+  console.error('Se bloqueo el arranque para proteger los datos:',error);
+}
+
 function readData() {
   const file=dataFile();
   const candidates=[file,file+'.bak',...Array.from({length:10},(_,i)=>file+'.bak.'+(i+1)),...listDailySnapshots()];
@@ -191,6 +305,13 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  if(startupStorageError){
+    dialog.showErrorBox('Datos protegidos: no se iniciará la aplicación',
+      String(startupStorageError.message||startupStorageError)+
+      '\n\nNo se ha borrado ningún pedido. Haz una copia de las carpetas antes de cambiar archivos.');
+    app.quit();
+    return;
+  }
   ipcMain.on('app:save-complete', confirmWindowSave);
   ipcMain.handle('data:get', () => readData());
   ipcMain.handle('device:id', () => getDeviceId());
