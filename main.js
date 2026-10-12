@@ -142,7 +142,8 @@ app.whenReady().then(() => {
       const raw = await response.text();
       let data = null;
       try { data = raw ? JSON.parse(raw) : null; } catch { data = raw; }
-      return { ok: response.ok, status: response.status, data, error: response.ok ? null : (data?.error || raw || 'Error del servidor') };
+      const errorText = response.ok ? null : (typeof data?.error === 'string' ? data.error : (response.status >= 500 ? 'Servidor Render temporalmente no disponible (HTTP ' + response.status + '). Reintentando conexión.' : 'Error HTTP ' + response.status));
+      return { ok: response.ok, status: response.status, data: response.ok ? data : null, error: errorText };
     } catch (error) {
       return { ok: false, status: 0, error: error?.message || 'No se pudo conectar con el servidor.' };
     }
