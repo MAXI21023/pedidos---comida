@@ -51,6 +51,8 @@ function readData() {
       const value=readValidated(candidate);
       if (candidate!==file) {
         console.error('Datos recuperados desde respaldo:',candidate);
+        if(fs.existsSync(file)) fs.copyFileSync(file,file+'.corrupt-'+Date.now());
+        fs.copyFileSync(candidate,file);
         dialog.showMessageBox({type:'warning',title:'Respaldo recuperado',
           message:'Se recuperaron los datos desde una copia de seguridad.',
           detail:'Revisa tus pedidos antes de continuar. Respaldo: '+candidate});
