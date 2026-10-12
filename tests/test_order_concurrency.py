@@ -8,6 +8,8 @@ import sqlite3
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
+from time import perf_counter
 from pathlib import Path
 from uuid import uuid4
 
@@ -109,6 +111,48 @@ class PedidosSimultaneosTest(unittest.TestCase):
         )
         ids = [data["id"] for _, data in results]
         self.assertEqual(len(set(ids)), 1)
+
+    def test_05_cien_clientes_simultaneos(self):
+        """100 compras distintas confirmadas a la vez, en una BD temporal."""
+        tokens = [str(uuid4()) for _ in range(100)]
+        gate = Barrier(100, timeout=30)
+
+        def comprar(token):
+            gate.wait()
+            request_started = perf_counter()
+            status, html = self.submit_web(token)
+            return status, html, perf_counter() - request_started
+
+        before = self.count()
+        start = perf_counter()
+        with ThreadPoolExecutor(max_workers=100) as pool:
+            results = list(pool.map(comprar, tokens))
+        elapsed = perf_counter() - start
+
+        successes = sum(code == 200 and "confirmaci" in html.lower() for code, html, _ in results)
+        failures = sum(code != 200 for code, _, _ in results)
+        with sqlite3.connect(self.db_path) as conn:
+            ids = [conn.execute(
+                "SELECT id FROM pedidos WHERE order_token=?", (token,)
+            ).fetchone() for token in tokens]
+        present = [row[0] for row in ids if row is not None]
+        duplicates = len(present) - len(set(present))
+        latencies = sorted(t for _, _, t in results)
+        print(
+            f"\\nPRUEBA 100 CLIENTES: solicitudes={len(results)}, "
+            f"respuestas_http_200={sum(code == 200 for code, _, _ in results)}, "
+            f"confirmaciones={successes}, fallos_http={failures}, "
+            f"pedidos_guardados={len(present)}, duplicados={duplicates}, "
+            f"tiempo_total={elapsed:.3f}s, "
+            f"latencia_mediana={latencies[49]:.3f}s, "
+            f"latencia_maxima={latencies[-1]:.3f}s"
+        )
+        self.assertEqual(len(results), 100)
+        self.assertTrue(all(code == 200 for code, _, _ in results),
+                        [code for code, _, _ in results])
+        self.assertEqual(self.count() - before, 100)
+        self.assertEqual(len(present), 100)
+        self.assertEqual(duplicates, 0)
 
     def test_04_listado_es_consistente(self):
         with self.app.test_client() as client:
