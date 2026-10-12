@@ -313,7 +313,7 @@ function renderLicenseStatus(){
 function remoteToLocal(r){
  const items=Array.isArray(r.items)?r.items.map(x=>({id:x.id,name:x.name||"Producto",type:x.type||"Producto",qty:Number(x.qty)||1,price:Number(x.price)||0,cost:Number(x.cost)||0})):[];
  const cost=items.reduce((s,x)=>s+x.cost*x.qty,0),total=Number(r.total)||0;
- return{id:"remote-"+r.id,remoteId:r.id,clientId:r.client_id||null,tip:Number(r.tip)||0,number:r.id,createdAt:parseServerDate(r.fecha),date:r.fecha?formatChileDateTime(parseServerDate(r.fecha)):formatChileDateTime(new Date()),client:r.cliente||"Sin nombre",phone:r.telefono||"",delivery:r.entrega||"Retiro",payment:r.pago||"Efectivo",address:r.direccion||"",notes:r.notas||"",items,total,cost,profit:total-cost,paid:Boolean(r.pagado),delivered:r.estado==="Entregado",status:r.estado||"Nuevo"}
+ return{id:"server-"+r.id,remoteId:r.id,clientId:r.client_id||null,tip:Number(r.tip)||0,number:r.id,createdAt:parseServerDate(r.fecha),date:r.fecha?formatChileDateTime(parseServerDate(r.fecha)):formatChileDateTime(new Date()),client:r.cliente||"Sin nombre",phone:r.telefono||"",delivery:r.entrega||"Retiro",payment:r.pago||"Efectivo",address:r.direccion||"",notes:r.notas||"",items,total,cost,profit:total-cost,paid:Boolean(r.pagado),delivered:r.estado==="Entregado",status:r.estado||"Nuevo"}
 }
 async function pullRemoteOrders(showFeedback=false){
  const res=await apiCall("/api/desktop/orders");
