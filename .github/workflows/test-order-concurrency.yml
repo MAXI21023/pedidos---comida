@@ -15,7 +15,7 @@ jobs:
         with:
           python-version: '3.11'
       - name: Verificar guardado seguro de aplicación de escritorio
-        run: node --test tests/test_desktop_persistence.cjs
+        run: node --test tests/test_desktop_persistence.cjs tests/test_backup_script.cjs
       - name: Instalar dependencias
         run: python -m pip install -r requirements.txt
       - name: Verificar inicio Gunicorn con cuatro hilos
