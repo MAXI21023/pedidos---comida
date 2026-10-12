@@ -178,3 +178,81 @@ test('preload confirma a Electron después de terminar el guardado',async()=>{
   assert.equal(sent[0][0],'app:save-complete');
   assert.equal(sent[0][1].ok,true);
 });
+
+test('npm start y app instalada usan la misma carpeta de datos',()=>{
+  for(const defaultUserData of ['gestor-pedidos-whatsapp','Gestor de Pedidos']){
+    const env=boot({defaultUserData});
+    try{
+      assert.equal(env.userPaths.userData,path.join(env.folder,'cl.gestorpedidos.desktop'));
+      assert.equal(env.dataFile(),path.join(env.folder,'cl.gestorpedidos.desktop','gestor-pedidos-data.json'));
+      assert.equal(env.startupStorageError,null);
+    }finally{env.cleanup()}
+  }
+});
+
+test('rescata los 13 pedidos del directorio npm sin borrar la fuente',()=>{
+  const env=boot({defaultUserData:'Gestor de Pedidos',setupLegacy:({folder})=>{
+    const old=path.join(folder,'gestor-pedidos-whatsapp');
+    fs.mkdirSync(old,{recursive:true});
+    fs.writeFileSync(path.join(old,'gestor-pedidos-data.json'),JSON.stringify(data(13)),'utf8');
+    fs.writeFileSync(path.join(old,'device-id.txt'),'device-test-123','utf8');
+  }});
+  try{
+    assert.equal(env.startupStorageError,null);
+    assert.equal(env.readData().orders.length,13);
+    assert.equal(env.readData().products.length,6);
+    assert.equal(fs.readFileSync(path.join(env.userPaths.userData,'device-id.txt'),'utf8'),'device-test-123');
+    assert.equal(fs.existsSync(path.join(env.folder,'gestor-pedidos-whatsapp','gestor-pedidos-data.json')),true);
+    const snapshots=fs.readdirSync(path.join(env.userPaths.userData,'migration-backups'));
+    assert.ok(snapshots.length>0);
+  }finally{env.cleanup()}
+});
+
+test('elige la carpeta con pedidos y no una app antigua vacía',()=>{
+  const env=boot({defaultUserData:'gestor-pedidos-whatsapp',setupLegacy:({folder})=>{
+    for(const [dir,count] of [['gestor-pedidos-whatsapp',13],['Gestor de Pedidos',0]]){
+      const target=path.join(folder,dir);
+      fs.mkdirSync(target,{recursive:true});
+      fs.writeFileSync(path.join(target,'gestor-pedidos-data.json'),JSON.stringify(data(count)),'utf8');
+    }
+  }});
+  try{
+    assert.equal(env.startupStorageError,null);
+    assert.equal(env.readData().orders.length,13);
+    assert.ok(env.readData().products.length>=6);
+  }finally{env.cleanup()}
+});
+
+test('historiales incompatibles bloquean migración sin sobrescribirlos',()=>{
+  const primary1=path.join('gestor-pedidos-whatsapp','gestor-pedidos-data.json');
+  const primary2=path.join('Gestor de Pedidos','gestor-pedidos-data.json');
+  const env=boot({setupLegacy:({folder})=>{
+    for(const d of ['gestor-pedidos-whatsapp','Gestor de Pedidos'])
+      fs.mkdirSync(path.join(folder,d),{recursive:true});
+    const a=data(13),b=data(13);
+    b.orders[0].id=99999;
+    fs.writeFileSync(path.join(folder,primary1),JSON.stringify(a),'utf8');
+    fs.writeFileSync(path.join(folder,primary2),JSON.stringify(b),'utf8');
+  }});
+  try{
+    assert.ok(env.startupStorageError);
+    assert.match(env.startupStorageError.message,/pedidos que no estan en las otras/);
+    assert.equal(fs.existsSync(path.join(env.folder,'cl.gestorpedidos.desktop','gestor-pedidos-data.json')),false);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(env.folder,primary1),'utf8')).orders.length,13);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(env.folder,primary2),'utf8')).orders[0].id,99999);
+  }finally{env.cleanup()}
+});
+
+test('rescata respaldo de una carpeta antigua con archivo principal corrupto',()=>{
+  const env=boot({setupLegacy:({folder})=>{
+    const dir=path.join(folder,'Gestor de Pedidos');
+    fs.mkdirSync(dir,{recursive:true});
+    fs.writeFileSync(path.join(dir,'gestor-pedidos-data.json'),'{"corrupto":','utf8');
+    fs.writeFileSync(path.join(dir,'gestor-pedidos-data.json.bak'),JSON.stringify(data(13)),'utf8');
+  }});
+  try{
+    assert.equal(env.startupStorageError,null);
+    assert.equal(env.readData().orders.length,13);
+    assert.equal(fs.readFileSync(path.join(env.folder,'Gestor de Pedidos','gestor-pedidos-data.json'),'utf8'),'{"corrupto":');
+  }finally{env.cleanup()}
+});
