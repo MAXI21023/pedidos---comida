@@ -54,6 +54,7 @@ function boot({defaultUserData='gestor-pedidos-whatsapp',setupLegacy}={}) {
   ipcMain.handle=(name,callback)=>handlers.set(name,callback);
   const dialog={
     showMessageBox:async(...args)=>{messages.push(args);return {response:0}},
+    showErrorBox:(...args)=>{messages.push(args)},
     showOpenDialog:async()=>({canceled:true,filePaths:[]}),
   };
   const electron={app,BrowserWindow,ipcMain,Notification:{isSupported:()=>false},
