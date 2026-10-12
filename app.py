@@ -92,7 +92,7 @@ app.jinja_env.globals['salsas_incluidas']=salsas_incluidas
 @app.route('/')
 def menu():
  c=db(); hoy=chile_now().date().isoformat()
- ps=c.execute('SELECT * FROM productos WHERE activo=1 ORDER BY tipo,nombre').fetchall(); c.close()
+ ps=c.execute("""SELECT * FROM productos WHERE activo=1 ORDER BY CASE WHEN lower(tipo) LIKE '%hamburg%' OR lower(tipo) LIKE '%burger%' OR lower(nombre) LIKE '%burger%' OR lower(nombre) LIKE '%hamburg%' THEN 0 WHEN lower(tipo) LIKE '%extra%' OR lower(nombre) LIKE '%extra%' THEN 1 ELSE 2 END, tipo, nombre""").fetchall(); c.close()
  return render_template('menu.html',productos=ps)
 
 @app.post('/api/order-activity')
