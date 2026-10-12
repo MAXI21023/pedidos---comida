@@ -133,7 +133,7 @@ def ordenar():
      c.close(); flash('Selecciona entre 1 y 3 salsas para '+p['nombre']); return redirect(url_for('menu'))
     salsa=', '.join(salsas)
    items.append(f"{q} x {p['nombre']} ({money(p['precio'])} c/u)"+(f" - Salsa: {salsa}" if salsa else ''))
-   structured.append((p['id'],p['nombre'],p['tipo'],q,p['precio'],p['costo']))
+   structured.append((p['id'],p['nombre']+(f" — Salsas: {salsa}" if salsa else ''),p['tipo'],q,p['precio'],p['costo']))
    total += q*p['precio']
  if not items:
   c.close(); flash('Selecciona al menos un producto.'); return redirect(url_for('menu'))
