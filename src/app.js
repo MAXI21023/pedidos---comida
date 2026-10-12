@@ -55,18 +55,20 @@ function renderSoldProducts(){
  const from=document.getElementById("soldFrom")?.value||"";
  const to=document.getElementById("soldTo")?.value||"";
  const orders=state.orders.filter(o=>{const d=orderChileISO(o);return (!from||d>=from)&&(!to||d<=to)});
- const grouped=new Map();let burgers=0,fries=0,comboFries=0,drinks=0,others=0;
+ const grouped=new Map();let burgers=0,fries=0,comboFries=0,drinks=0,extraCheese=0,extraMeat=0,others=0;
  for(const o of orders){
   for(const x of (Array.isArray(o.items)?o.items:[])){
    const qty=Number(x.qty||0);
    if(!Number.isFinite(qty)||qty<=0)continue;
    const name=String(x.name||"Producto"),type=String(x.type||"").toLowerCase();
+   const isExtraCheese=/(extra|adicional)\s+(de\s+)?queso|queso\s+(extra|adicional)/i.test(name);
+   const isExtraMeat=/(extra|adicional)\s+(de\s+)?carne|carne\s+(extra|adicional)/i.test(name);
    const isDrink=/bebida|bebestible|gaseosa|refresco|coca.?cola|sprite|fanta|jugo|agua mineral/i.test(type+" "+name);
    const isBurger=type.includes("hamburg")||/burger|hamburg|clásica|criolla|bacon crunch/i.test(name);
    const isFries=/papa|fries|frita/i.test(type+" "+name);
-   const category=isDrink?"drink":isBurger?"burger":isFries?"fries":"other";
+   const category=isExtraCheese?"cheese":isExtraMeat?"meat":isDrink?"drink":isBurger?"burger":isFries?"fries":"other";
    if(isBurger)comboFries+=qty;
-   if(category==="burger")burgers+=qty;else if(category==="fries")fries+=qty;else if(category==="drink")drinks+=qty;else others+=qty;
+   if(category==="burger")burgers+=qty;else if(category==="fries")fries+=qty;else if(category==="drink")drinks+=qty;else if(category==="cheese")extraCheese+=qty;else if(category==="meat")extraMeat+=qty;else others+=qty;
    const key=category+"|"+name.toLocaleLowerCase("es");
    const old=grouped.get(key)||{name,category,qty:0,amount:0};
    old.qty+=qty;old.amount+=qty*Number(x.price||0);grouped.set(key,old);
@@ -77,8 +79,10 @@ function renderSoldProducts(){
  document.getElementById("soldComboFries").textContent=comboFries.toLocaleString("es-CL");
  document.getElementById("soldAllFries").textContent=(fries+comboFries).toLocaleString("es-CL");
  document.getElementById("soldDrinks").textContent=drinks.toLocaleString("es-CL");
+ document.getElementById("soldExtraCheese").textContent=extraCheese.toLocaleString("es-CL");
+ document.getElementById("soldExtraMeat").textContent=extraMeat.toLocaleString("es-CL");
  document.getElementById("soldOthers").textContent=others.toLocaleString("es-CL");
- document.getElementById("soldUnits").textContent=(burgers+fries+comboFries+drinks+others).toLocaleString("es-CL");
+ document.getElementById("soldUnits").textContent=(burgers+fries+comboFries+drinks+extraCheese+extraMeat+others).toLocaleString("es-CL");
  document.getElementById("soldOrders").textContent=orders.length.toLocaleString("es-CL");
  const catalog=new Map();
  for(const p of (state.products||[])){
