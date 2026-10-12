@@ -11,13 +11,21 @@ const {EventEmitter} = require('node:events');
 const mainSource = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
 const preloadSource = fs.readFileSync(path.join(__dirname, '..', 'preload.js'), 'utf8');
 
-function boot() {
+function boot({defaultUserData='gestor-pedidos-whatsapp',setupLegacy}={}) {
   const folder=fs.mkdtempSync(path.join(os.tmpdir(),'gestor-pedidos-guardado-'));
+  const userPaths={
+    appData:folder,
+    userData:path.join(folder,defaultUserData)
+  };
+  fs.mkdirSync(userPaths.userData,{recursive:true});
+  if(setupLegacy) setupLegacy({folder,userPaths});
   const windows=[];
   const messages=[];
   const handlers=new Map();
   const app=new EventEmitter();
-  app.getPath=()=>folder;
+  app.getPath=(name)=>userPaths[name]||folder;
+  app.setPath=(name,value)=>{userPaths[name]=value};
+  app.quit=()=>{};
   app.whenReady=()=>Promise.resolve();
 
   class BrowserWindow extends EventEmitter {
@@ -56,10 +64,10 @@ function boot() {
     process,console,setTimeout,clearTimeout,
   };
   vm.runInNewContext(
-    mainSource+'\n;globalThis.__storageHooks={readData,writeData,dataFile};',
+    mainSource+'\n;globalThis.__storageHooks={readData,writeData,dataFile,stableStoragePaths,startupStorageError};',
     context,{filename:'main.js'},
   );
-  return {folder,windows,dialog,messages,ipcMain,handlers,...context.__storageHooks,
+  return {folder,userPaths,windows,dialog,messages,ipcMain,handlers,...context.__storageHooks,
     cleanup:()=>fs.rmSync(folder,{recursive:true,force:true})};
 }
 
