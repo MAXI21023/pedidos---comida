@@ -27,6 +27,9 @@ function persist(){
 }
 document.getElementById("delivery")?.addEventListener("change",renderCart);
 async function init(){
+  if(!window.desktopAPI || typeof window.desktopAPI.getData!=="function"){
+    throw new Error("No se cargó la conexión interna de Electron (preload.js). Cierra y vuelve a iniciar la aplicación desde el proyecto.");
+  }
   const saved=await window.desktopAPI.getData();
   state=saved||state;
   localMenuHasSavedProducts=Boolean(saved && Array.isArray(saved.products) && saved.products.length);
@@ -441,4 +444,11 @@ function startServerSync(){if(syncConfigured()){setSyncStatus("warn","Conectando
 
 window.addEventListener("beforeunload",()=>{window.desktopAPI.setData(state)});
 setInterval(()=>persist(),15000);
-init();
+init().catch(error=>{
+ console.error("Error al iniciar Gestor de Pedidos:",error);
+ const msg=document.createElement("div");
+ msg.setAttribute("role","alert");
+ msg.style.cssText="position:fixed;top:12px;left:12px;right:12px;z-index:99999;background:#7f1d1d;color:white;padding:18px;border:2px solid #fca5a5;border-radius:12px;font:15px system-ui;white-space:pre-wrap";
+ msg.textContent="No se pudo iniciar el Gestor de Pedidos. Tus archivos no se han borrado. Error: "+(error?.message||String(error))+"\\nNo uses Importar ni reinstales la aplicación. Copia este mensaje para corregirlo.";
+ document.body.appendChild(msg);
+});
