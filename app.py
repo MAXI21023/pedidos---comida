@@ -35,6 +35,9 @@ def init_db():
  cols_ped={r['name'] for r in c.execute("PRAGMA table_info(pedidos)").fetchall()}
  if 'notas' not in cols_ped: c.execute("ALTER TABLE pedidos ADD COLUMN notas TEXT DEFAULT ''")
  if 'stock_descontado' not in cols_ped: c.execute("ALTER TABLE pedidos ADD COLUMN stock_descontado INTEGER NOT NULL DEFAULT 0")
+ if 'client_id' not in cols_ped: c.execute('ALTER TABLE pedidos ADD COLUMN client_id TEXT')
+ if 'propina' not in cols_ped: c.execute('ALTER TABLE pedidos ADD COLUMN propina INTEGER NOT NULL DEFAULT 0')
+ c.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_pedidos_client_id ON pedidos(client_id) WHERE client_id IS NOT NULL')
  c.execute('''CREATE TABLE IF NOT EXISTS pedido_actividad(
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   token TEXT UNIQUE NOT NULL,
@@ -222,6 +225,51 @@ def desktop_set_stock():
 def desktop_health():
  return jsonify({'ok':True,'service':'pedidos-comida','version':'0.3.0'})
 
+@app.post('/api/desktop/orders')
+@api_required
+def desktop_create_order():
+ data=request.get_json(silent=True) or {}
+ client_id=str(data.get('client_id') or '').strip()[:100]
+ items=data.get('items')
+ if not client_id or not isinstance(items,list) or not items:
+  return jsonify({'error':'Identificador y productos requeridos'}),400
+ try:
+  total=int(data.get('total') or 0)
+  tip=int(data.get('tip') or 0)
+  if total<0 or tip<0 or len(items)>100: raise ValueError()
+  normalized=[]
+  for x in items:
+   if not isinstance(x,dict): raise ValueError()
+   qty=int(x.get('qty') or 0); price=int(x.get('price') or 0); cost=int(x.get('cost') or 0)
+   if qty<=0 or qty>10000 or price<0 or cost<0: raise ValueError()
+   normalized.append((str(x.get('name') or 'Producto')[:150],str(x.get('type') or 'Producto')[:80],qty,price,cost))
+ except (ValueError,TypeError):
+  return jsonify({'error':'Datos de pedido no válidos'}),400
+ estado=str(data.get('status') or 'Nuevo')
+ if estado not in {'Nuevo','Confirmado','Preparando','Listo','En reparto','Entregado','Cancelado'}: estado='Nuevo'
+ fecha=str(data.get('createdAt') or chile_now().isoformat(timespec='seconds'))[:40]
+ c=db()
+ try:
+  existing=c.execute('SELECT id FROM pedidos WHERE client_id=?',(client_id,)).fetchone()
+  if existing: return jsonify({'ok':True,'id':existing['id'],'existing':True})
+  detail=' | '.join(f'{qty} x {name}' for name,typ,qty,price,cost in normalized)
+  cur=c.execute('INSERT INTO pedidos(cliente,telefono,direccion,entrega,pago,detalle,total,estado,pagado,fecha,notas,client_id,propina) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',(
+   str(data.get('client') or 'Sin nombre')[:120],str(data.get('phone') or '')[:40],str(data.get('address') or '')[:250],
+   str(data.get('delivery') or 'Retiro')[:80],str(data.get('payment') or 'Efectivo')[:80],detail,total,estado,
+   1 if data.get('paid') else 0,fecha,str(data.get('notes') or '')[:1000],client_id,tip))
+  oid=cur.lastrowid
+  c.executemany('INSERT INTO pedido_items(pedido_id,producto_id,nombre,tipo,cantidad,precio,costo) VALUES(?,?,?,?,?,?,?)',[
+   (oid,None,name,typ,qty,price,cost) for name,typ,qty,price,cost in normalized])
+  c.commit()
+  return jsonify({'ok':True,'id':oid,'existing':False}),201
+ except sqlite3.IntegrityError:
+  c.rollback()
+  existing=c.execute('SELECT id FROM pedidos WHERE client_id=?',(client_id,)).fetchone()
+  if existing: return jsonify({'ok':True,'id':existing['id'],'existing':True})
+  return jsonify({'error':'Conflicto guardando pedido'}),409
+ finally:
+  c.close()
+
 @app.get('/api/desktop/orders')
 @api_required
 def desktop_orders():
@@ -238,7 +286,7 @@ def desktop_orders():
    'id':r['id'],'cliente':r['cliente'],'telefono':r['telefono'],'direccion':r['direccion'] or '',
    'entrega':r['entrega'],'pago':r['pago'],'detalle':r['detalle'],'total':r['total'],
    'estado':r['estado'],'pagado':bool(r['pagado']),'fecha':r['fecha'],
-   'notas':r['notas'] if 'notas' in r.keys() else '','items':out_items
+   'notas':r['notas'] if 'notas' in r.keys() else '','client_id':r['client_id'],'tip':r['propina'],'items':out_items
   })
  c.close()
  return jsonify(result)
@@ -247,7 +295,7 @@ def desktop_orders():
 @api_required
 def desktop_update_order(i):
  data=request.get_json(silent=True) or {}
- allowed={'Nuevo','Confirmado','Preparando','Listo','Entregado','Cancelado'}
+ allowed={'Nuevo','Confirmado','Preparando','Listo','En reparto','Entregado','Cancelado'}
  c=db()
  row=c.execute('SELECT id,stock_descontado FROM pedidos WHERE id=?',(i,)).fetchone()
  if not row:
