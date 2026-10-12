@@ -56,7 +56,7 @@ function boot() {
     process,console,setTimeout,clearTimeout,
   };
   vm.runInNewContext(
-    mainSource+'\\n;globalThis.__storageHooks={readData,writeData,dataFile};',
+    mainSource+'\n;globalThis.__storageHooks={readData,writeData,dataFile};',
     context,{filename:'main.js'},
   );
   return {folder,windows,dialog,messages,ipcMain,handlers,...context.__storageHooks,
