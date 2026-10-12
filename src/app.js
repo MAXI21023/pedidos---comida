@@ -19,11 +19,37 @@ const calcMargin=(price,cost)=>price?((price-cost)/price*100):0;
 const calcSuggested=(cost,margin)=>{const m=Number(margin)/100;return m>=1?0:Number(cost)/(1-m)};
 const escapeHtml=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));
 
-let persistQueue=Promise.resolve();
+let persistQueue=Promise.resolve(),dataLoaded=false;
+function showLocalSaveError(error){
+ const message=String(error?.message||error||"Error desconocido");
+ console.error("Error guardando datos locales:",error);
+ let banner=document.getElementById("localSaveError");
+ if(!banner){
+  banner=document.createElement("div");
+  banner.id="localSaveError";
+  banner.setAttribute("role","alert");
+  banner.style.cssText="position:fixed;left:14px;right:14px;bottom:14px;z-index:100000;background:#7f1d1d;color:white;border:2px solid #fca5a5;border-radius:12px;padding:14px;font:15px system-ui;box-shadow:0 3px 20px #0008";
+  document.body.appendChild(banner);
+ }
+ banner.textContent="⚠️ NO SE PUDIERON GUARDAR LOS DATOS EN ESTE MAC. No cierres la aplicación. "+message;
+}
 function persist(){
+ if(!dataLoaded){
+  const error=new Error("No se han cargado aún los datos guardados; se impidió sobrescribirlos.");
+  showLocalSaveError(error);
+  return Promise.reject(error);
+ }
  const snapshot=JSON.parse(JSON.stringify(state));
- persistQueue=persistQueue.then(()=>window.desktopAPI.setData(snapshot)).catch(e=>{console.error("Error guardando datos",e)});
- return persistQueue
+ // Cada cambio se escribe de forma secuencial; al cerrar se espera el último.
+ const job=persistQueue.catch(()=>{}).then(async()=>{
+  const result=await window.desktopAPI.setData(snapshot);
+  if(result?.ok!==true)throw new Error("El Mac no confirmó que se guardó el archivo.");
+  document.getElementById("localSaveError")?.remove();
+  return result;
+ });
+ persistQueue=job;
+ job.catch(showLocalSaveError);
+ return job;
 }
 document.getElementById("delivery")?.addEventListener("change",renderCart);
 async function init(){
@@ -38,6 +64,7 @@ async function init(){
   if(!Array.isArray(state.ingredients)) state.ingredients=[];
   if(!state.dailyStock) state.dailyStock={};
   state.settings={businessName:"Mi Hamburguesería",businessPhone:"",thanksMessage:"¡Gracias por tu pedido!",serverUrl:"https://pedidos-comida-2ktc.onrender.com",apiKey:"",sessionToken:"",licenseActive:false,licensedBusiness:"",businessId:null,syncInitialized:false,...(state.settings||{})};
+  dataLoaded=true;
   await persist();
   renderAll();
   await validateLicense();
@@ -314,8 +341,19 @@ function editProduct(id){const p=state.products.find(x=>x.id===id);if(!p)return;
 async function saveProduct(){const id=Number(document.getElementById("editId").value||0),name=document.getElementById("pName").value.trim(),type=document.getElementById("pType").value.trim()||"Producto",desc=document.getElementById("pDesc").value.trim(),ingredients=ingredientRowsFromUI(),cost=Math.round(ingredients.reduce((s,x)=>s+ingredientLineCost(x),0)),price=Number(document.getElementById("pPrice").value||0),active=document.getElementById("pActive").value==="true";if(!name){alert("Ingresa el nombre.");return}if(price<=0){alert("Ingresa un precio de venta válido.");return}if(id){Object.assign(state.products.find(x=>x.id===id),{name,type,desc,ingredients,cost,price,active})}else state.products.push({id:Date.now(),name,type,desc,ingredients,cost,price,active});await persist();closeProductModal();renderProducts();renderAdmin();renderOrders();renderStats();renderCart();localMenuHasSavedProducts=true;const ok=await pushProducts(false);if(!ok)alert("El producto quedó guardado en la app, pero no se pudo actualizar la página web.")}
 async function deleteProduct(id){const used=state.orders.some(o=>o.items.some(i=>i.id===id));if(used){if(!confirm("Este producto aparece en pedidos históricos. Se eliminará solo del menú actual. ¿Continuar?"))return}else if(!confirm("¿Eliminar este producto?"))return;state.products=state.products.filter(x=>x.id!==id);await persist();renderProducts();renderAdmin();const ok=await pushProducts(false);if(!ok)alert("El cambio quedó guardado en la app, pero no se pudo actualizar la página web.")}
 async function saveSettings(){state.settings.businessName=document.getElementById("businessName").value.trim()||"Mi Hamburguesería";state.settings.businessPhone=document.getElementById("businessPhone").value.trim();state.settings.thanksMessage=document.getElementById("thanksMessage").value.trim()||"¡Gracias por tu pedido!";state.settings.serverUrl=document.getElementById("serverUrl").value.trim().replace(/\/$/,"");state.settings.apiKey=document.getElementById("apiKey").value.trim();await persist();renderAll();alert("Configuración guardada.");await syncNow(true)}
-async function exportBackup(){const ok=await window.desktopAPI.exportBackup(state);if(ok)alert("Respaldo guardado.")}
-async function importBackup(){try{const data=await window.desktopAPI.importBackup();if(!data)return;if(!confirm("Se reemplazarán los datos actuales por el respaldo seleccionado. ¿Continuar?"))return;state=data;await persist();renderAll();alert("Respaldo importado.")}catch(e){alert("No se pudo importar el respaldo.")}}
+async function exportBackup(){try{await persist();const ok=await window.desktopAPI.exportBackup(state);if(ok)alert("Respaldo guardado.")}catch(e){alert("No fue posible verificar los datos antes de respaldar: "+(e?.message||e))}}
+async function importBackup(){
+ try{
+  const data=await window.desktopAPI.importBackup();
+  if(!data)return;
+  if(!confirm("Se reemplazarán los datos actuales por el respaldo seleccionado. ¿Continuar?"))return;
+  await persist();
+  const before=state;
+  state=data;
+  try{await persist()}catch(error){state=before;throw error}
+  renderAll();alert("Respaldo importado.");
+ }catch(e){alert("No se pudo importar el respaldo. Tus datos anteriores no fueron reemplazados: "+(e?.message||e))}
+}
 async function exportOrdersCSV(){const headers=["N°","Fecha","Cliente","Teléfono","Total","Costo","Utilidad","Pagado","Entregado","Estado","Entrega","Pago","Productos"],rows=state.orders.map(o=>[o.number,o.date,o.client,o.phone,o.total,o.cost??0,o.total-(o.cost??0),o.paid?"Sí":"No",o.delivered?"Sí":"No",o.status,o.delivery,o.payment,o.items.map(i=>`${i.qty}x ${i.name}`).join(" | ")]),esc=v=>`"${String(v??"").replace(/"/g,'""')}"`,csv=[headers,...rows].map(r=>r.map(esc).join(";")).join("\n");const ok=await window.desktopAPI.exportCSV(csv);if(ok)alert("CSV exportado.")}
 
 
@@ -570,8 +608,17 @@ function startServerSync(){
  setInterval(()=>pollOrderActivitySafely().catch(e=>console.error("Actividad web",e)),15000);
 }
 
-window.addEventListener("beforeunload",()=>{window.desktopAPI.setData(state)});
-setInterval(()=>persist(),15000);
+// El cierre espera a que termine la cola de guardados y verifica el archivo.
+window.desktopAPI?.onSaveAndClose?.(async()=>{
+ if(!dataLoaded)throw new Error("La aplicación todavía no terminó de cargar los pedidos.");
+ await persist();
+ const saved=await window.desktopAPI.getData();
+ if(!saved||!Array.isArray(saved.orders)||!Array.isArray(saved.products))
+  throw new Error("No fue posible leer de vuelta el archivo guardado.");
+ if(saved.orders.length!==state.orders.length||saved.products.length!==state.products.length)
+  throw new Error("Los pedidos o productos del archivo no coinciden con los visibles.");
+});
+setInterval(()=>{if(dataLoaded)persist().catch(()=>{})},15000);
 init().catch(error=>{
  console.error("Error al iniciar Gestor de Pedidos:",error);
  const msg=document.createElement("div");
