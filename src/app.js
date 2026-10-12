@@ -80,7 +80,20 @@ function renderSoldProducts(){
  document.getElementById("soldOthers").textContent=others.toLocaleString("es-CL");
  document.getElementById("soldUnits").textContent=(burgers+fries+comboFries+drinks+others).toLocaleString("es-CL");
  document.getElementById("soldOrders").textContent=orders.length.toLocaleString("es-CL");
- const list=[...grouped.values()].sort((a,b)=>b.qty-a.qty||a.name.localeCompare(b.name));
+ const catalog=new Map();
+ for(const p of (state.products||[])){
+  const name=String(p.name||"").trim();
+  if(!name)continue;
+  const key=name.toLocaleLowerCase("es");
+  if(!catalog.has(key))catalog.set(key,{name,qty:0,amount:0});
+ }
+ for(const x of grouped.values()){
+  const key=x.name.toLocaleLowerCase("es");
+  const old=catalog.get(key);
+  if(old){old.qty+=x.qty;old.amount+=x.amount}
+  else catalog.set(key,{name:x.name,qty:x.qty,amount:x.amount});
+ }
+ const list=[...catalog.values()].sort((a,b)=>b.qty-a.qty||a.name.localeCompare(b.name));
  document.getElementById("soldDetails").innerHTML=list.length?'<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr><th style="text-align:left">Producto</th><th>Unidades</th><th>Venta de productos</th></tr></thead><tbody>'+list.map(x=>'<tr><td>'+escapeHtml(x.name)+'</td><td style="text-align:center">'+x.qty.toLocaleString("es-CL")+'</td><td style="text-align:right">'+money(x.amount)+'</td></tr>').join("")+'</tbody></table></div>':'No hay productos vendidos en el período seleccionado.';
 }
 function clearSoldDates(){document.getElementById("soldFrom").value="";document.getElementById("soldTo").value="";renderSoldProducts()}
