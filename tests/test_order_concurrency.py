@@ -129,7 +129,7 @@ class PedidosSimultaneosTest(unittest.TestCase):
             results = list(pool.map(comprar, tokens))
         elapsed = perf_counter() - start
 
-        successes = sum(code == 200 and "confirmaci" in html.lower() for code, html, _ in results)
+        successes = sum(code == 200 and "Pedido recibido" in html for code, html, _ in results)
         failures = sum(code != 200 for code, _, _ in results)
         with sqlite3.connect(self.db_path) as conn:
             ids = [conn.execute(
@@ -148,6 +148,7 @@ class PedidosSimultaneosTest(unittest.TestCase):
             f"latencia_maxima={latencies[-1]:.3f}s"
         )
         self.assertEqual(len(results), 100)
+        self.assertEqual(successes, 100, 'No todos los clientes vieron la pantalla de confirmación')
         self.assertTrue(all(code == 200 for code, _, _ in results),
                         [code for code, _, _ in results])
         self.assertEqual(self.count() - before, 100)
