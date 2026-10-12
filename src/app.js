@@ -133,12 +133,18 @@ async function loadDailyStock(){
  if(!syncConfigured())return false;
  if(stockEditing||document.activeElement?.matches?.("[data-stock-id], [data-stock-available]"))return false;
  const res=await apiCall("/api/desktop/stock");
- if(!res.ok)return false;
- for(const x of (res.data||[])){
-  const key=String(x.desktop_id||x.id);
-  state.dailyStock[key]={stock:Number(x.stock_diario)||0,available:Boolean(x.disponible)};
+ if(!res.ok||!Array.isArray(res.data))return false;
+ let changed=false;
+ for(const x of res.data){
+  const key=String(x.desktop_id||x.id),next={stock:Number(x.stock_diario)||0,available:Boolean(x.disponible)};
+  const prev=state.dailyStock[key];
+  if(!prev||prev.stock!==next.stock||prev.available!==next.available){
+   state.dailyStock[key]=next;changed=true;
+  }
  }
- await persist(); renderDailyStock(); return true;
+ lastStockSyncAt=Date.now();
+ if(changed){await persist();renderDailyStock()}
+ return true;
 }
 async function saveDailyStock(){
  stockEditing=true;
@@ -368,20 +374,55 @@ function remoteToLocal(r){
 }
 async function pullRemoteOrders(showFeedback=false){
  const res=await apiCall("/api/desktop/orders");
- if(!res.ok){setSyncStatus("off",res.error||"Sin conexión");if(showFeedback)alert("No se pudo sincronizar: "+(res.error||res.status));return false}
+ if(!res.ok){
+  setSyncStatus("off",res.error||"Sin conexión");
+  if(showFeedback)alert("No se pudo sincronizar: "+(res.error||res.status));
+  return false;
+ }
  if(!Array.isArray(res.data)){
   setSyncStatus("warn","Respuesta de pedidos inválida. No se modificó el historial.");
   return false;
  }
- const rows=res.data,first=!state.settings.syncInitialized;let added=0;
+ const rows=res.data,first=!state.settings.syncInitialized;
+ const byClientId=new Map(state.orders.map(o=>[String(o.id),o]));
+ const byRemoteId=new Map(state.orders.filter(o=>o.remoteId!=null&&!String(o.id).startsWith("remote-")).map(o=>[Number(o.remoteId),o]));
+ let added=0,updated=0;
  for(const r of rows.slice().reverse()){
   try{
-  const found=state.orders.find(o=>r.client_id&&String(o.id)===String(r.client_id)) || state.orders.find(o=>o.remoteId!=null&&Number(o.remoteId)===Number(r.id)&&!String(o.id).startsWith("remote-"));
-  if(found){const fresh=remoteToLocal(r);const keepLocal=Boolean(found.syncPending);Object.assign(found,{remoteId:r.id,client:fresh.client,phone:fresh.phone,delivery:fresh.delivery,payment:fresh.payment,address:fresh.address,notes:fresh.notes,items:fresh.items,total:fresh.total,cost:fresh.cost,profit:fresh.profit,tip:found.tip??fresh.tip,paid:keepLocal?found.paid:fresh.paid,delivered:keepLocal?found.delivered:fresh.delivered,status:keepLocal?found.status:fresh.status})}
-  else{const fresh=remoteToLocal(r);state.orders.unshift(fresh);added++;if(!first){try{await window.desktopAPI.notify("Nuevo pedido web",`Pedido #${fresh.number} · ${fresh.client} · ${money(fresh.total)}`)}catch(e){console.error("Notificación de pedido",e)}}}
+   const found=(r.client_id&&byClientId.get(String(r.client_id)))||byRemoteId.get(Number(r.id));
+   if(found){
+    const fresh=remoteToLocal(r),keepLocal=Boolean(found.syncPending);
+    const patch={remoteId:r.id,client:fresh.client,phone:fresh.phone,
+     delivery:fresh.delivery,payment:fresh.payment,address:fresh.address,
+     notes:fresh.notes,items:fresh.items,total:fresh.total,
+     cost:fresh.cost,profit:fresh.profit,tip:found.tip??fresh.tip,
+     paid:keepLocal?found.paid:fresh.paid,
+     delivered:keepLocal?found.delivered:fresh.delivered,
+     status:keepLocal?found.status:fresh.status};
+    const changed=Object.entries(patch).some(([k,v])=>k==="items"
+      ? JSON.stringify(found.items||[])!==JSON.stringify(v)
+      : found[k]!==v);
+    if(changed){Object.assign(found,patch);updated++}
+   }else{
+    const fresh=remoteToLocal(r);
+    state.orders.unshift(fresh);
+    added++;
+    byRemoteId.set(Number(r.id),fresh);
+    if(!first){
+     try{await window.desktopAPI.notify("Nuevo pedido web",`Pedido #${fresh.number} · ${fresh.client} · ${money(fresh.total)}`)}
+     catch(e){console.error("Notificación de pedido",e)}
+    }
+   }
   }catch(e){console.error("Error al procesar pedido web",r?.id,e)}
  }
- state.settings.syncInitialized=true;await persist();renderOrders();renderBadges();renderStats();setSyncStatus("on",`Pedidos conectados · ${rows.length} en servidor${added?" · "+added+" nuevo(s)":""}`);if(showFeedback)alert(`Recepción de pedidos correcta. ${rows.length} en servidor, ${added} nuevos descargados.`);return true
+ state.settings.syncInitialized=true;
+ if(added||updated||first){
+  await persist();
+  renderOrders();renderBadges();renderStats();renderSoldProducts();
+ }
+ setSyncStatus("on",`Pedidos conectados · ${rows.length} en servidor${added?" · "+added+" nuevo(s)":""}`);
+ if(showFeedback)alert(`Recepción de pedidos correcta. ${rows.length} en servidor, ${added} nuevos descargados.`);
+ return true;
 }
 async function pushLocalOrders(){
  if(!syncConfigured())return false;
@@ -471,7 +512,7 @@ async function pullOrderActivity(){
  if(box){box.querySelectorAll(".draft-activity").forEach(el=>el.remove());const drafts=activeDrafts();if(drafts.length){const html=drafts.map(a=>`<div class="order draft-activity" style="border:2px solid #f0b429;background:#fffaf0"><b>🟡 PEDIDO EN PROCESO</b><div class="smalltxt">${escapeHtml((a.cliente||"Cliente").trim()||"Cliente")}</div><span class="status warn">ARMANDO PEDIDO…</span></div>`).join("");box.insertAdjacentHTML("afterbegin",html)}}
 }
 let syncBusy=false;let syncTimersStarted=false;let menuStartupPublishDone=false;let localMenuHasSavedProducts=false;
-let syncRetryAt=0,syncFailureCount=0,activityBusy=false;
+let syncRetryAt=0,syncFailureCount=0,activityBusy=false,lastStockSyncAt=0;
 function scheduleSyncRetry(){
  syncFailureCount=Math.min(syncFailureCount+1,5);
  const wait=Math.min(60000,5000*Math.pow(2,syncFailureCount));
@@ -506,7 +547,7 @@ async function syncNow(showFeedback=false){
   syncFailureCount=0;syncRetryAt=0;
   if(!await pushLocalOrders())return scheduleSyncRetry();
   if(!await flushPendingOrderUpdates())return scheduleSyncRetry();
-  await loadDailyStock();
+  if(Date.now()-lastStockSyncAt>=30000)await loadDailyStock();
   return true;
  }catch(e){
   console.error("Error al sincronizar pedidos",e);
@@ -526,7 +567,7 @@ function startServerSync(){
  syncTimersStarted=true;
  setInterval(()=>syncNow(false),5000);
  setInterval(()=>publishMenuOnStartup().catch(e=>console.error("Reintento menú",e)),60000);
- setInterval(()=>pollOrderActivitySafely().catch(e=>console.error("Actividad web",e)),5000);
+ setInterval(()=>pollOrderActivitySafely().catch(e=>console.error("Actividad web",e)),15000);
 }
 
 window.addEventListener("beforeunload",()=>{window.desktopAPI.setData(state)});
