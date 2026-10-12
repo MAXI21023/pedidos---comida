@@ -321,7 +321,7 @@ async function pullRemoteOrders(showFeedback=false){
  const rows=Array.isArray(res.data)?res.data:[],first=!state.settings.syncInitialized;let added=0;
  for(const r of rows.slice().reverse()){
   try{
-  const found=state.orders.find(o=>(o.remoteId!=null&&Number(o.remoteId)===Number(r.id))||(r.client_id&&String(o.id)===String(r.client_id)));
+  const found=state.orders.find(o=>r.client_id&&String(o.id)===String(r.client_id)) || state.orders.find(o=>o.remoteId!=null&&Number(o.remoteId)===Number(r.id)&&!String(o.id).startsWith("remote-"));
   if(found){const fresh=remoteToLocal(r);const keepLocal=Boolean(found.statusChangedAt);Object.assign(found,{remoteId:r.id,client:fresh.client,phone:fresh.phone,delivery:fresh.delivery,payment:fresh.payment,address:fresh.address,notes:fresh.notes,items:fresh.items,total:fresh.total,cost:fresh.cost,profit:fresh.profit,tip:found.tip??fresh.tip,paid:keepLocal?found.paid:fresh.paid,delivered:keepLocal?found.delivered:fresh.delivered,status:keepLocal?found.status:fresh.status})}
   else{const fresh=remoteToLocal(r);state.orders.unshift(fresh);added++;if(!first){try{await window.desktopAPI.notify("Nuevo pedido web",`Pedido #${fresh.number} · ${fresh.client} · ${money(fresh.total)}`)}catch(e){console.error("Notificación de pedido",e)}}}
   }catch(e){console.error("Error al procesar pedido web",r?.id,e)}
