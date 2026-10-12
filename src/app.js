@@ -162,8 +162,36 @@ function cartTotal(){return cart.reduce((s,x)=>s+Number(x.price||0)*Number(x.qty
 function renderCart(){const el=document.getElementById("cart");el.innerHTML=cart.length?cart.map(x=>`<div class="cart-item"><div class="row between"><div><b>${escapeHtml(x.name)}</b><div class="muted">${money(x.price)} c/u</div></div><div class="row"><button class="secondary small" onclick="changeQty(${x.id},-1)">−</button><span class="qty">${x.qty}</span><button class="secondary small" onclick="changeQty(${x.id},1)">+</button></div></div></div>`).join(""):'<div class="muted">Agrega productos desde el menú.</div>';const t=cartTotal(),c=cartCost();const tip=Number(document.getElementById("newOrderTip")?.value||0);document.getElementById("total").textContent=money(t+(Number.isFinite(tip)&&tip>=0?tip:0));document.getElementById("orderSubtotal").textContent=money(t);document.getElementById("orderTipPreview").textContent=money(Number.isFinite(tip)&&tip>=0?tip:0);document.getElementById("cartCost").textContent=money(c);document.getElementById("cartProfit").textContent=money(t-c);document.getElementById("cartMargin").textContent=(t?((t-c)/t*100):0).toFixed(1)+"%"}
 function getOrderData(){const t=cartTotal(),c=cartCost(),tip=Number(document.getElementById("newOrderTip")?.value||0);return{tip,id:Date.now(),number:(state.orders.length?Math.max(...state.orders.map(o=>o.number||0)):0)+1,createdAt:new Date().toISOString(),date:formatChileDateTime(new Date()),client:document.getElementById("client").value.trim()||"Sin nombre",phone:document.getElementById("phone").value.trim(),delivery:document.getElementById("delivery").value,payment:document.getElementById("payment").value,address:document.getElementById("address").value.trim(),notes:document.getElementById("notes").value.trim(),items:cart.map(x=>({id:x.id,name:x.name,price:x.price,cost:x.cost,qty:x.qty,type:x.type})),total:t,cost:c,profit:t-c,paid:false,delivered:false,status:"Nuevo"}}
 function clearCurrentOrder(){cart=[];document.getElementById("delivery").value="Retiro en local";document.getElementById("newOrderTip").value="0";renderCart();["client","phone","address","notes"].forEach(id=>document.getElementById(id).value="")}
-async function saveOrder(showAlert=true){const tip=Number(document.getElementById("newOrderTip").value||0);if(!Number.isInteger(tip)||tip<0){alert("Ingresa una propina válida.");return null}if(!cart.length){alert("Agrega al menos un producto.");return null}const o=getOrderData();state.orders.unshift(o);await persist();clearCurrentOrder();renderBadges();renderStats();if(showAlert)alert("Pedido #"+o.number+" registrado.");return o}
-async function saveAndWhatsApp(){const o=await saveOrder(false);if(!o)return;openWhatsApp(o);alert("Pedido #"+o.number+" registrado y preparado para WhatsApp.")}
+async function saveOrder(showAlert=true){
+ const tip=Number(document.getElementById("newOrderTip").value||0);
+ if(!Number.isInteger(tip)||tip<0){alert("Ingresa una propina válida.");return null}
+ if(!cart.length){alert("Agrega al menos un producto.");return null}
+ const o=getOrderData();
+ state.orders.unshift(o);
+ try{
+  await persist();
+  const saved=await window.desktopAPI.getData();
+  if(!saved||!Array.isArray(saved.orders)||!saved.orders.some(x=>String(x.id)===String(o.id)))
+   throw new Error("El pedido no figura en el archivo local después de guardar.");
+ }catch(e){
+  alert("No se pudo verificar el guardado del pedido. No cierres la aplicación y guarda un respaldo. Detalle: "+(e?.message||e));
+  return null;
+ }
+ clearCurrentOrder();renderOrders();renderBadges();renderStats();renderSoldProducts();
+ let synced=false;
+ if(syncConfigured()){
+  const res=await apiCall("/api/desktop/orders","POST",{
+   client_id:String(o.id),client:o.client,phone:o.phone,address:o.address,
+   delivery:o.delivery,payment:o.payment,notes:o.notes,total:o.total,
+   tip:o.tip||0,paid:Boolean(o.paid),status:o.status,createdAt:o.createdAt,items:o.items
+  });
+  if(res.ok&&res.data?.id){o.remoteId=res.data.id;await persist();synced=true}
+  else setSyncStatus("warn","Pedido guardado en Mac; envío a Render pendiente");
+ }
+ if(showAlert)alert("Pedido #"+o.number+" guardado en Mac."+ (synced?" También registrado en Render.":" Pendiente de confirmar en Render."));
+ return o
+}
+async function saveAndWhatsApp(){const o=await saveOrder(false);if(!o)return;openWhatsApp(o);alert("Pedido #"+o.number+" guardado en Mac y preparado para WhatsApp."+(o.remoteId?" Sincronizado con Render.":" Envío a Render pendiente."))}
 function orderMessage(o){return `🍔 *PEDIDO #${o.number}*\nCliente: ${o.client}\n\n${o.items.map(x=>`${x.qty} x ${x.name} — ${money(x.price*x.qty)}`).join("\n")}\n\n*TOTAL: ${money(o.total)}*\nEntrega: ${o.delivery}\nPago: ${o.payment}${o.address?`\nDirección: ${o.address}`:""}${o.notes?`\nObservaciones: ${o.notes}`:""}\n\n${state.settings.thanksMessage||"¡Gracias por tu pedido!"}`}
 function openWhatsApp(o){const phone=(o.phone||"").replace(/\D/g,"");const url=phone?`https://wa.me/${phone}?text=${encodeURIComponent(orderMessage(o))}`:`https://wa.me/?text=${encodeURIComponent(orderMessage(o))}`;window.open(url,"_blank")}
 async function setOrderStatus(id,val){
