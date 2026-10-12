@@ -16,5 +16,7 @@ jobs:
           python-version: '3.11'
       - name: Instalar dependencias
         run: python -m pip install -r requirements.txt
+      - name: Verificar inicio Gunicorn con cuatro hilos
+        run: DB_PATH=/tmp/pedidos-smoke.db gunicorn -c gunicorn.conf.py --check-config app:app
       - name: Probar recepcion y reintentos (base temporal)
         run: python -m unittest discover -s tests -v
