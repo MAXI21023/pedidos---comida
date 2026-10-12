@@ -57,6 +57,11 @@ async function init(){
     throw new Error("No se cargó la conexión interna de Electron (preload.js). Cierra y vuelve a iniciar la aplicación desde el proyecto.");
   }
   const saved=await window.desktopAPI.getData();
+  try {
+    const info=await window.desktopAPI.getAppInfo();
+    const label=document.getElementById("runtimeVersion");
+    if(label)label.textContent="Versión "+info.version+" · Guardado unificado";
+  }catch(e){console.error("No se pudo consultar la versión:",e)}
   state=saved||state;
   localMenuHasSavedProducts=Boolean(saved && Array.isArray(saved.products) && saved.products.length);
   if(!Array.isArray(state.products)||!state.products.length) state.products=defaultProducts;
