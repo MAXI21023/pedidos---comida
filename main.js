@@ -28,6 +28,26 @@ function dataFile() {
   return path.join(app.getPath('userData'), 'gestor-pedidos-data.json');
 }
 
+// Copias diarias independientes de los respaldos rotativos. Conserva 30 dias.
+function dailySnapshotDir() {
+  return path.join(app.getPath('userData'), 'daily-backups');
+}
+function listDailySnapshots() {
+  const dir = dailySnapshotDir();
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir)
+    .filter(name => /^gestor-pedidos-\d{4}-\d{2}-\d{2}\.json$/.test(name))
+    .sort().reverse().map(name => path.join(dir, name));
+}
+function saveDailySnapshot(file) {
+  const dir = dailySnapshotDir();
+  fs.mkdirSync(dir, {recursive:true, mode:0o700});
+  const name = 'gestor-pedidos-' + new Date().toISOString().slice(0,10) + '.json';
+  const target = path.join(dir, name);
+  if (!fs.existsSync(target)) fs.copyFileSync(file, target, fs.constants.COPYFILE_EXCL);
+  for (const old of listDailySnapshots().slice(30)) fs.unlinkSync(old);
+}
+
 function defaultData() {
   return { products: [], orders: [], settings: { businessName: 'Mi Hamburguesería' } };
 }
@@ -43,7 +63,7 @@ function readValidated(file) {
 }
 function readData() {
   const file=dataFile();
-  const candidates=[file,file+'.bak',...Array.from({length:10},(_,i)=>file+'.bak.'+(i+1))];
+  const candidates=[file,file+'.bak',...Array.from({length:10},(_,i)=>file+'.bak.'+(i+1)),...listDailySnapshots()];
   const existing=candidates.filter(p=>fs.existsSync(p));
   if (!existing.length) return defaultData();
   for (const candidate of existing) {
@@ -66,9 +86,17 @@ function writeData(data) {
   if (!validData(data)) throw new Error('Guardado bloqueado: datos inválidos');
   const file=dataFile(),dir=path.dirname(file),tmp=file+'.tmp',backup=file+'.bak';
   fs.mkdirSync(dir,{recursive:true});
+  const json=JSON.stringify(data,null,2);
   if (fs.existsSync(file)) {
-    // Nunca sobrescribir un archivo dañado ni destruir los respaldos válidos.
-    readValidated(file);
+    // Nunca sobrescribir un archivo dañado ni permitir un vaciado accidental masivo.
+    const previous=readValidated(file);
+    if(previous.orders.length>=5 && data.orders.length===0)
+      throw new Error('Protección de pedidos: se rechazó un intento de vaciar todo el historial.');
+    if(previous.products.length>=5 && data.products.length===0)
+      throw new Error('Protección del menú: se rechazó un intento de vaciar todo el catálogo.');
+    try { saveDailySnapshot(file); } catch(e) { console.error('No se pudo guardar copia diaria:',e); }
+    // El autosalvado periódico no debe gastar ni reemplazar los respaldos si nada cambió.
+    if (fs.readFileSync(file,'utf8')===json) return {ok:true,file,unchanged:true};
     for(let i=10;i>=2;i--){
       const prev= i===2?backup+'.1':backup+'.'+(i-1);
       const next=backup+'.'+i;
@@ -77,7 +105,6 @@ function writeData(data) {
     if(fs.existsSync(backup)) fs.copyFileSync(backup,backup+'.1');
     fs.copyFileSync(file,backup);
   }
-  const json=JSON.stringify(data,null,2);
   fs.writeFileSync(tmp,json,'utf8');
   try {
     readValidated(tmp);
@@ -134,18 +161,30 @@ app.whenReady().then(() => {
       if (request.sessionToken) headers['X-Session-Token'] = String(request.sessionToken);
       if (request.body !== undefined && request.body !== null) headers['Content-Type'] = 'application/json';
 
-      const response = await fetch(base + (pathName.startsWith('/') ? pathName : '/' + pathName), {
-        method,
-        headers,
-        body: request.body !== undefined && request.body !== null ? JSON.stringify(request.body) : undefined
-      });
-      const raw = await response.text();
+      // Tiempo máximo de espera: evita bloqueos si Render o la red dejan de responder.
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15000);
+      let response, raw;
+      try {
+        response = await fetch(base + (pathName.startsWith('/') ? pathName : '/' + pathName), {
+          method,
+          headers,
+          signal: controller.signal,
+          body: request.body !== undefined && request.body !== null ? JSON.stringify(request.body) : undefined
+        });
+        raw = await response.text();
+      } finally {
+        clearTimeout(timeout);
+      }
       let data = null;
       try { data = raw ? JSON.parse(raw) : null; } catch { data = raw; }
       const errorText = response.ok ? null : (typeof data?.error === 'string' ? data.error : (response.status >= 500 ? 'Servidor Render temporalmente no disponible (HTTP ' + response.status + '). Reintentando conexión.' : 'Error HTTP ' + response.status));
       return { ok: response.ok, status: response.status, data: response.ok ? data : null, error: errorText };
     } catch (error) {
-      return { ok: false, status: 0, error: error?.message || 'No se pudo conectar con el servidor.' };
+      const message = error?.name === 'AbortError'
+        ? 'Render no respondió en 15 segundos. Los datos locales siguen guardados.'
+        : (error?.message || 'No se pudo conectar con el servidor.');
+      return { ok: false, status: 0, error: message };
     }
   });
   ipcMain.handle('preview:voucher', async (_event, html) => {
