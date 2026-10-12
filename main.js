@@ -4,6 +4,51 @@ const fs = require('fs');
 
 let mainWindow;
 
+// Al cerrar, esperar la confirmacion de que el ultimo estado quedo en el disco.
+function guardWindowClose(win, event) {
+  if (win.allowSafeClose) return;
+  event.preventDefault();
+  if (win.waitingForSave) return;
+  win.waitingForSave = true;
+  win.webContents.send('app:save-and-close');
+  win.saveCloseTimeout = setTimeout(async () => {
+    if (win.isDestroyed() || !win.waitingForSave) return;
+    win.waitingForSave = false;
+    const {response} = await dialog.showMessageBox(win, {
+      type:'warning',
+      title:'No se pudo verificar el guardado',
+      message:'No recibimos confirmación de que los datos estén guardados.',
+      detail:'Para proteger tus pedidos, el cierre se detuvo. Puedes seguir trabajando o cerrar bajo tu responsabilidad.',
+      buttons:['Seguir trabajando','Cerrar de todas formas'],
+      defaultId:0,cancelId:0,noLink:true
+    });
+    if (response===1 && !win.isDestroyed()) {
+      win.allowSafeClose=true;
+      win.close();
+    }
+  },12000);
+}
+
+function confirmWindowSave(event, result) {
+  const win=BrowserWindow.fromWebContents(event.sender);
+  if (!win || win.isDestroyed() || !win.waitingForSave) return;
+  clearTimeout(win.saveCloseTimeout);
+  win.waitingForSave=false;
+  if (result && result.ok===true) {
+    win.allowSafeClose=true;
+    win.close();
+    return;
+  }
+  dialog.showMessageBox(win,{
+    type:'error',
+    title:'Guardado pendiente',
+    message:'La aplicación NO se cerró para proteger los pedidos.',
+    detail:'Error al guardar: '+String(result?.error||'No se pudo verificar el archivo.')+'\nRevisa el espacio disponible en tu Mac y vuelve a intentar cerrar.',
+    buttons:['Seguir trabajando'],
+    defaultId:0,cancelId:0,noLink:true
+  }).catch(error=>console.error('Error mostrando advertencia de guardado:',error));
+}
+
 function deviceIdFile() {
   return path.join(app.getPath('userData'), 'device-id.txt');
 }
@@ -90,9 +135,9 @@ function writeData(data) {
   if (fs.existsSync(file)) {
     // Nunca sobrescribir un archivo dañado ni permitir un vaciado accidental masivo.
     const previous=readValidated(file);
-    if(previous.orders.length>=5 && data.orders.length===0)
+    if(previous.orders.length>0 && data.orders.length===0)
       throw new Error('Protección de pedidos: se rechazó un intento de vaciar todo el historial.');
-    if(previous.products.length>=5 && data.products.length===0)
+    if(previous.products.length>0 && data.products.length===0)
       throw new Error('Protección del menú: se rechazó un intento de vaciar todo el catálogo.');
     try { saveDailySnapshot(file); } catch(e) { console.error('No se pudo guardar copia diaria:',e); }
     // El autosalvado periódico no debe gastar ni reemplazar los respaldos si nada cambió.
@@ -108,6 +153,9 @@ function writeData(data) {
   fs.writeFileSync(tmp,json,'utf8');
   try {
     readValidated(tmp);
+    // Confirmar que el contenido esta escrito en el disco antes del rename atomico.
+    const fd=fs.openSync(tmp,'r');
+    try {fs.fsyncSync(fd)} finally {fs.closeSync(fd)}
     fs.renameSync(tmp,file);
   } catch(e) {
     try{fs.unlinkSync(tmp)}catch{}
@@ -131,6 +179,7 @@ function createWindow() {
     }
   });
 
+  mainWindow.on('close', event => guardWindowClose(mainWindow, event));
   mainWindow.loadFile(path.join(__dirname, 'src', 'index.html'));
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('https://wa.me/') || url.startsWith('https://api.whatsapp.com/')) {
@@ -141,8 +190,8 @@ function createWindow() {
   });
 }
 
-app.on('before-quit',()=>{try{if(mainWindow&&!mainWindow.isDestroyed())mainWindow.webContents.send('app:save-before-quit')}catch{}});
 app.whenReady().then(() => {
+  ipcMain.on('app:save-complete', confirmWindowSave);
   ipcMain.handle('data:get', () => readData());
   ipcMain.handle('device:id', () => getDeviceId());
   ipcMain.handle('external:open', async (_event, url) => { try { const u=new URL(String(url)); if(u.hostname!=='wa.me'&&u.hostname!=='api.whatsapp.com') return {ok:false}; await shell.openExternal(u.toString()); return {ok:true}; } catch { return {ok:false}; } });
@@ -243,7 +292,8 @@ app.whenReady().then(() => {
     });
     if (result.canceled || !result.filePaths[0]) return null;
     const data = JSON.parse(fs.readFileSync(result.filePaths[0], 'utf8'));
-    writeData(data);
+    if (!validData(data)) throw new Error('El archivo de respaldo no es válido');
+    // Nunca sobrescribir los datos al elegir el archivo: falta confirmar en la interfaz.
     return data;
   });
   ipcMain.handle('csv:export', async (_event, csv) => {
