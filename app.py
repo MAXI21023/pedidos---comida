@@ -15,10 +15,14 @@ ADMIN_PIN=os.getenv('ADMIN_PIN','1234')
 API_KEY=os.getenv('API_KEY','')
 
 def db():
- c=sqlite3.connect(DB, timeout=15); c.row_factory=sqlite3.Row; return c
+ c=sqlite3.connect(DB, timeout=30); c.row_factory=sqlite3.Row; return c
 
 def init_db():
- c=db(); c.executescript('''
+ c=db()
+ # WAL permite que se lean pedidos mientras otros clientes registran ventas.
+ # Debe residir en el mismo disco persistente que pedidos.db.
+ c.execute('PRAGMA journal_mode=WAL')
+ c.executescript('''
  CREATE TABLE IF NOT EXISTS productos(id INTEGER PRIMARY KEY AUTOINCREMENT,nombre TEXT NOT NULL,tipo TEXT NOT NULL,precio INTEGER NOT NULL,costo INTEGER NOT NULL DEFAULT 0,activo INTEGER DEFAULT 1);
  CREATE TABLE IF NOT EXISTS pedidos(id INTEGER PRIMARY KEY AUTOINCREMENT,cliente TEXT NOT NULL,telefono TEXT NOT NULL,direccion TEXT,entrega TEXT NOT NULL,pago TEXT NOT NULL,detalle TEXT NOT NULL,total INTEGER NOT NULL,estado TEXT DEFAULT 'Nuevo',pagado INTEGER DEFAULT 0,fecha TEXT NOT NULL);
  ''')
@@ -37,6 +41,8 @@ def init_db():
  if 'stock_descontado' not in cols_ped: c.execute("ALTER TABLE pedidos ADD COLUMN stock_descontado INTEGER NOT NULL DEFAULT 0")
  if 'client_id' not in cols_ped: c.execute('ALTER TABLE pedidos ADD COLUMN client_id TEXT')
  if 'propina' not in cols_ped: c.execute('ALTER TABLE pedidos ADD COLUMN propina INTEGER NOT NULL DEFAULT 0')
+ if 'order_token' not in cols_ped: c.execute('ALTER TABLE pedidos ADD COLUMN order_token TEXT')
+ c.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_pedidos_order_token ON pedidos(order_token) WHERE order_token IS NOT NULL')
  c.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_pedidos_client_id ON pedidos(client_id) WHERE client_id IS NOT NULL')
  c.execute('''CREATE TABLE IF NOT EXISTS pedido_actividad(
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -59,6 +65,7 @@ def init_db():
   precio INTEGER NOT NULL,
   costo INTEGER NOT NULL DEFAULT 0
  )''')
+ c.execute('CREATE INDEX IF NOT EXISTS idx_pedido_items_pedido_id ON pedido_items(pedido_id,id)')
  c.commit(); c.close()
 
 def api_required(f):
@@ -132,36 +139,75 @@ def desktop_activity():
 
 @app.post('/ordenar')
 def ordenar():
- c=db(); productos=c.execute('SELECT * FROM productos WHERE activo=1').fetchall(); mapa={str(p['id']):p for p in productos}
- items=[]; structured=[]; total=0
- for pid,p in mapa.items():
-  try:q=max(0,int(request.form.get('q_'+pid,0)))
-  except:q=0
-  if q:
-   if not p['disponible'] or p['stock_diario']<=0 or q>p['stock_diario']:
-    c.close(); flash(f"Lo sentimos, ya no quedan suficientes unidades de {p['nombre']}."); return redirect(url_for('menu'))
-   salsa=''
-   if 'hamburg' in (p['tipo'] or '').lower() or 'burger' in (p['nombre'] or '').lower():
-    salsas=request.form.getlist('salsa_'+pid)
-    if not 1<=len(salsas)<=3 or len(set(salsas))!=len(salsas) or any(x not in ('Mayonesa','Ketchup','Mostaza','Salsa barbecue','Salsa especial') or x in salsas_incluidas(p['nombre'],p['descripcion']) for x in salsas):
-     c.close(); flash('Selecciona entre 1 y 3 salsas para '+p['nombre']); return redirect(url_for('menu'))
-    salsa=', '.join(salsas)
-   items.append(f"{q} x {p['nombre']} ({money(p['precio'])} c/u)"+(f" - Salsa: {salsa}" if salsa else ''))
-   structured.append((p['id'],p['nombre']+(f" — Salsas: {salsa}" if salsa else ''),p['tipo'],q,p['precio'],p['costo']))
-   total += q*p['precio']
- if not items:
-  c.close(); flash('Selecciona al menos un producto.'); return redirect(url_for('menu'))
- cliente=request.form.get('cliente','').strip(); telefono=''.join(ch for ch in request.form.get('telefono','') if ch.isdigit()); telefono=('569'+telefono[-8:]) if len(telefono)>=8 else telefono; activity_token=request.form.get('activity_token','').strip()[:80]; entrega=request.form.get('entrega','Retiro'); comuna='Negrete'; direccion=request.form.get('direccion','').strip(); pago=request.form.get('pago','Efectivo'); notas=request.form.get('notas','').strip()
- if entrega.startswith('Delivery'):
-  entrega='Delivery'
-  total += 1000
-  direccion=f'{comuna} - {direccion}'
- cur=c.execute('INSERT INTO pedidos(cliente,telefono,direccion,entrega,pago,detalle,total,fecha,notas) VALUES(?,?,?,?,?,?,?,?,?)',(cliente,telefono,direccion,entrega,pago,' | '.join(items),total,chile_now().isoformat(timespec='seconds'),notas))
- oid=cur.lastrowid
- c.executemany('INSERT INTO pedido_items(pedido_id,producto_id,nombre,tipo,cantidad,precio,costo) VALUES(?,?,?,?,?,?,?)',[(oid,*x) for x in structured])
- if activity_token: c.execute('UPDATE pedido_actividad SET confirmado=1 WHERE token=?',(activity_token,))
- c.commit(); c.close()
- return render_template('confirmacion.html',pedido=oid,total=total,cliente=cliente)
+ c=db()
+ # Token único de la página: reenviar el mismo formulario nunca duplica un pedido.
+ token=str(request.form.get('activity_token') or '').strip()[:80] or None
+ try:
+  # Si ya se confirmó este formulario, devolver el mismo número, incluso si el
+  # navegador reenvió tras un corte de conexión.
+  if token:
+   old=c.execute('SELECT id,total,cliente FROM pedidos WHERE order_token=?',(token,)).fetchone()
+   if old:
+    return render_template('confirmacion.html',pedido=old['id'],total=old['total'],cliente=old['cliente'])
+  productos=c.execute('SELECT * FROM productos WHERE activo=1').fetchall()
+  mapa={str(p['id']):p for p in productos}
+  items=[]; structured=[]; total=0
+  for pid,p in mapa.items():
+   try: q=max(0,int(request.form.get('q_'+pid,0)))
+   except (ValueError,TypeError): q=0
+   if q:
+    if not p['disponible'] or p['stock_diario']<=0 or q>p['stock_diario']:
+     flash(f"Lo sentimos, ya no quedan suficientes unidades de {p['nombre']}.")
+     return redirect(url_for('menu'))
+    salsa=''
+    if 'hamburg' in (p['tipo'] or '').lower() or 'burger' in (p['nombre'] or '').lower():
+     salsas=request.form.getlist('salsa_'+pid)
+     if not 1<=len(salsas)<=3 or len(set(salsas))!=len(salsas) or any(x not in ('Mayonesa','Ketchup','Mostaza','Salsa barbecue','Salsa especial') or x in salsas_incluidas(p['nombre'],p['descripcion']) for x in salsas):
+      flash('Selecciona entre 1 y 3 salsas para '+p['nombre'])
+      return redirect(url_for('menu'))
+     salsa=', '.join(salsas)
+    items.append(f"{q} x {p['nombre']} ({money(p['precio'])} c/u)"+(f" - Salsa: {salsa}" if salsa else ''))
+    structured.append((p['id'],p['nombre']+(f" — Salsas: {salsa}" if salsa else ''),p['tipo'],q,p['precio'],p['costo']))
+    total+=q*p['precio']
+  if not items:
+   flash('Selecciona al menos un producto.')
+   return redirect(url_for('menu'))
+  cliente=request.form.get('cliente','').strip()
+  telefono=''.join(ch for ch in request.form.get('telefono','') if ch.isdigit())
+  telefono=('569'+telefono[-8:]) if len(telefono)>=8 else telefono
+  entrega=request.form.get('entrega','Retiro')
+  comuna='Negrete'
+  direccion=request.form.get('direccion','').strip()
+  pago=request.form.get('pago','Efectivo')
+  notas=request.form.get('notas','').strip()
+  if entrega.startswith('Delivery'):
+   entrega='Delivery'
+   total+=1000
+   direccion=f'{comuna} - {direccion}'
+
+  # La escritura de cabecera, items y actividad es una sola transacción.
+  # BEGIN IMMEDIATE serializa escrituras simultáneas sin bloquear lectores WAL.
+  c.execute('BEGIN IMMEDIATE')
+  if token:
+   old=c.execute('SELECT id,total,cliente FROM pedidos WHERE order_token=?',(token,)).fetchone()
+   if old:
+    c.commit()
+    return render_template('confirmacion.html',pedido=old['id'],total=old['total'],cliente=old['cliente'])
+  cur=c.execute('INSERT INTO pedidos(cliente,telefono,direccion,entrega,pago,detalle,total,fecha,notas,order_token) VALUES(?,?,?,?,?,?,?,?,?,?)',
+   (cliente,telefono,direccion,entrega,pago,' | '.join(items),total,chile_now().isoformat(timespec='seconds'),notas,token))
+  oid=cur.lastrowid
+  c.executemany('INSERT INTO pedido_items(pedido_id,producto_id,nombre,tipo,cantidad,precio,costo) VALUES(?,?,?,?,?,?,?)',
+   [(oid,*x) for x in structured])
+  if token: c.execute('UPDATE pedido_actividad SET confirmado=1 WHERE token=?',(token,))
+  c.commit()
+  return render_template('confirmacion.html',pedido=oid,total=total,cliente=cliente)
+ except sqlite3.Error:
+  c.rollback()
+  app.logger.exception('Error al recibir pedido web')
+  flash('No pudimos confirmar el pedido por un problema temporal. Revisa si recibiste el número de confirmación antes de intentar nuevamente.')
+  return redirect(url_for('menu'))
+ finally:
+  c.close()
 
 @app.route('/admin/login',methods=['GET','POST'])
 def login():
@@ -288,22 +334,29 @@ def desktop_create_order():
 @api_required
 def desktop_orders():
  c=db()
- rows=c.execute('SELECT * FROM pedidos ORDER BY id DESC').fetchall()
- result=[]
- for r in rows:
-  items=c.execute('SELECT producto_id,nombre,tipo,cantidad,precio,costo FROM pedido_items WHERE pedido_id=? ORDER BY id',(r['id'],)).fetchall()
-  if items:
-   out_items=[{'id':x['producto_id'],'name':x['nombre'],'type':x['tipo'] or 'Producto','qty':x['cantidad'],'price':x['precio'],'cost':x['costo']} for x in items]
-  else:
-   out_items=[{'id':None,'name':r['detalle'],'type':'Pedido web','qty':1,'price':r['total'],'cost':0}]
-  result.append({
-   'id':r['id'],'cliente':r['cliente'],'telefono':r['telefono'],'direccion':r['direccion'] or '',
-   'entrega':r['entrega'],'pago':r['pago'],'detalle':r['detalle'],'total':r['total'],
-   'estado':r['estado'],'pagado':bool(r['pagado']),'fecha':r['fecha'],
-   'notas':r['notas'] if 'notas' in r.keys() else '','client_id':r['client_id'],'tip':r['propina'],'items':out_items
-  })
- c.close()
- return jsonify(result)
+ try:
+  # Dos consultas independientemente de cuántos pedidos existan;
+  # antes se ejecutaba una consulta adicional por cada pedido.
+  rows=c.execute('SELECT * FROM pedidos ORDER BY id DESC').fetchall()
+  item_rows=c.execute('SELECT pedido_id,producto_id,nombre,tipo,cantidad,precio,costo FROM pedido_items ORDER BY pedido_id,id').fetchall()
+  by_order={}
+  for x in item_rows:
+   by_order.setdefault(x['pedido_id'],[]).append({
+    'id':x['producto_id'],'name':x['nombre'],'type':x['tipo'] or 'Producto',
+    'qty':x['cantidad'],'price':x['precio'],'cost':x['costo']
+   })
+  result=[]
+  for r in rows:
+   out_items=by_order.get(r['id']) or [{'id':None,'name':r['detalle'],'type':'Pedido web','qty':1,'price':r['total'],'cost':0}]
+   result.append({
+    'id':r['id'],'cliente':r['cliente'],'telefono':r['telefono'],'direccion':r['direccion'] or '',
+    'entrega':r['entrega'],'pago':r['pago'],'detalle':r['detalle'],'total':r['total'],
+    'estado':r['estado'],'pagado':bool(r['pagado']),'fecha':r['fecha'],
+    'notas':r['notas'] if 'notas' in r.keys() else '','client_id':r['client_id'],'tip':r['propina'],'items':out_items
+   })
+  return jsonify(result)
+ finally:
+  c.close()
 
 @app.patch('/api/desktop/orders/<int:i>')
 @api_required
