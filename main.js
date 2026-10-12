@@ -313,6 +313,7 @@ app.whenReady().then(() => {
     return;
   }
   ipcMain.on('app:save-complete', confirmWindowSave);
+  ipcMain.handle('app:info', () => ({version:app.getVersion(),packaged:app.isPackaged,storage:'unificado'}));
   ipcMain.handle('data:get', () => readData());
   ipcMain.handle('device:id', () => getDeviceId());
   ipcMain.handle('external:open', async (_event, url) => { try { const u=new URL(String(url)); if(u.hostname!=='wa.me'&&u.hostname!=='api.whatsapp.com') return {ok:false}; await shell.openExternal(u.toString()); return {ok:true}; } catch { return {ok:false}; } });
