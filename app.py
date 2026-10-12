@@ -15,7 +15,7 @@ ADMIN_PIN=os.getenv('ADMIN_PIN','1234')
 API_KEY=os.getenv('API_KEY','')
 
 def db():
- c=sqlite3.connect(DB); c.row_factory=sqlite3.Row; return c
+ c=sqlite3.connect(DB, timeout=15); c.row_factory=sqlite3.Row; return c
 
 def init_db():
  c=db(); c.executescript('''
@@ -88,6 +88,20 @@ def salsas_incluidas(nombre, descripcion):
  return [nombre for nombre, patron in reglas.items() if re.search(patron,texto)]
 
 app.jinja_env.globals['salsas_incluidas']=salsas_incluidas
+
+@app.get('/health')
+def health():
+ # Comprobación para Render: servicio activo y archivo SQLite legible.
+ c=None
+ try:
+  c=db()
+  exists=c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='pedidos'").fetchone()
+  return (jsonify({'status':'ok'}),200) if exists else (jsonify({'status':'unavailable'}),503)
+ except sqlite3.Error:
+  app.logger.exception('Error comprobando la base de datos')
+  return jsonify({'status':'unavailable'}),503
+ finally:
+  if c is not None: c.close()
 
 @app.route('/')
 def menu():
