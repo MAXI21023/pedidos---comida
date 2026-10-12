@@ -313,7 +313,7 @@ function renderLicenseStatus(){
 function remoteToLocal(r){
  const items=Array.isArray(r.items)?r.items.map(x=>({id:x.id,name:x.name||"Producto",type:x.type||"Producto",qty:Number(x.qty)||1,price:Number(x.price)||0,cost:Number(x.cost)||0})):[];
  const cost=items.reduce((s,x)=>s+x.cost*x.qty,0),total=Number(r.total)||0;
- return{id:"remote-"+r.id,remoteId:r.id,number:r.id,createdAt:parseServerDate(r.fecha),date:r.fecha?formatChileDateTime(parseServerDate(r.fecha)):formatChileDateTime(new Date()),client:r.cliente||"Sin nombre",phone:r.telefono||"",delivery:r.entrega||"Retiro",payment:r.pago||"Efectivo",address:r.direccion||"",notes:r.notas||"",items,total,cost,profit:total-cost,paid:Boolean(r.pagado),delivered:r.estado==="Entregado",status:r.estado||"Nuevo"}
+ return{id:"remote-"+r.id,remoteId:r.id,clientId:r.client_id||null,tip:Number(r.tip)||0,number:r.id,createdAt:parseServerDate(r.fecha),date:r.fecha?formatChileDateTime(parseServerDate(r.fecha)):formatChileDateTime(new Date()),client:r.cliente||"Sin nombre",phone:r.telefono||"",delivery:r.entrega||"Retiro",payment:r.pago||"Efectivo",address:r.direccion||"",notes:r.notas||"",items,total,cost,profit:total-cost,paid:Boolean(r.pagado),delivered:r.estado==="Entregado",status:r.estado||"Nuevo"}
 }
 async function pullRemoteOrders(showFeedback=false){
  const res=await apiCall("/api/desktop/orders");
@@ -321,12 +321,31 @@ async function pullRemoteOrders(showFeedback=false){
  const rows=Array.isArray(res.data)?res.data:[],first=!state.settings.syncInitialized;let added=0;
  for(const r of rows.slice().reverse()){
   try{
-  const found=state.orders.find(o=>Number(o.remoteId)===Number(r.id));
-  if(found){const fresh=remoteToLocal(r);const keepLocal=Boolean(found.statusChangedAt);Object.assign(found,{client:fresh.client,phone:fresh.phone,delivery:fresh.delivery,payment:fresh.payment,address:fresh.address,notes:fresh.notes,items:fresh.items,total:fresh.total,cost:fresh.cost,profit:fresh.profit,paid:keepLocal?found.paid:fresh.paid,delivered:keepLocal?found.delivered:fresh.delivered,status:keepLocal?found.status:fresh.status})}
+  const found=state.orders.find(o=>(o.remoteId!=null&&Number(o.remoteId)===Number(r.id))||(r.client_id&&String(o.id)===String(r.client_id)));
+  if(found){const fresh=remoteToLocal(r);const keepLocal=Boolean(found.statusChangedAt);Object.assign(found,{remoteId:r.id,client:fresh.client,phone:fresh.phone,delivery:fresh.delivery,payment:fresh.payment,address:fresh.address,notes:fresh.notes,items:fresh.items,total:fresh.total,cost:fresh.cost,profit:fresh.profit,tip:found.tip??fresh.tip,paid:keepLocal?found.paid:fresh.paid,delivered:keepLocal?found.delivered:fresh.delivered,status:keepLocal?found.status:fresh.status})}
   else{const fresh=remoteToLocal(r);state.orders.unshift(fresh);added++;if(!first){try{await window.desktopAPI.notify("Nuevo pedido web",`Pedido #${fresh.number} · ${fresh.client} · ${money(fresh.total)}`)}catch(e){console.error("Notificación de pedido",e)}}}
   }catch(e){console.error("Error al procesar pedido web",r?.id,e)}
  }
  state.settings.syncInitialized=true;await persist();renderOrders();renderBadges();renderStats();setSyncStatus("on",`Pedidos conectados · ${rows.length} en servidor${added?" · "+added+" nuevo(s)":""}`);if(showFeedback)alert(`Recepción de pedidos correcta. ${rows.length} en servidor, ${added} nuevos descargados.`);return true
+}
+async function pushLocalOrders(){
+ if(!syncConfigured())return false;
+ const pending=state.orders.filter(o=>!o.remoteId&&!String(o.id).startsWith("remote-"));
+ let uploaded=0;
+ for(const o of pending){
+  const res=await apiCall("/api/desktop/orders","POST",{
+   client_id:String(o.id),client:o.client,phone:o.phone,address:o.address,
+   delivery:o.delivery,payment:o.payment,notes:o.notes,total:o.total,
+   tip:o.tip||0,paid:Boolean(o.paid),status:o.status,createdAt:o.createdAt,
+   items:o.items
+  });
+  if(!res.ok){setSyncStatus("warn","Pedidos locales pendientes: "+(res.error||res.status));return false}
+  o.remoteId=res.data.id;
+  await persist();
+  uploaded++;
+ }
+ if(uploaded){renderOrders();setSyncStatus("on",uploaded+" pedidos locales respaldados en servidor")}
+ return true
 }
 async function pushProducts(showFeedback=false){
  if(!syncConfigured()){setSyncStatus("off","Falta clave API del servidor");if(showFeedback)alert("La página de Render requiere una clave API. Configura en la app la misma API_KEY que está guardada en Render.");return false}
@@ -389,7 +408,7 @@ async function publishMenuOnStartup(){
  if(!ok){menuStartupPublishDone=false;console.warn("Menú web pendiente de publicación");}
 }
 
-async function syncNow(showFeedback=false){if(syncBusy)return false;if(!syncConfigured()){setSyncStatus("off","Falta clave API de Render");if(showFeedback)alert("Configura la URL y la misma clave API que está en Render.");return false}syncBusy=true;try{const ok=await pullRemoteOrders(showFeedback);if(ok)await loadDailyStock();return ok}catch(e){setSyncStatus("off","Error recibiendo pedidos: "+(e?.message||e));if(showFeedback)alert("Error recibiendo pedidos: "+(e?.message||e));return false}finally{syncBusy=false}}
+async function syncNow(showFeedback=false){if(syncBusy)return false;if(!syncConfigured()){setSyncStatus("off","Falta clave API de Render");if(showFeedback)alert("Configura la URL y la misma clave API que está en Render.");return false}syncBusy=true;try{const ok=await pullRemoteOrders(showFeedback);if(ok){await pushLocalOrders();await loadDailyStock()}return ok}catch(e){setSyncStatus("off","Error recibiendo pedidos: "+(e?.message||e));if(showFeedback)alert("Error recibiendo pedidos: "+(e?.message||e));return false}finally{syncBusy=false}}
 function startServerSync(){if(syncConfigured()){setSyncStatus("warn","Conectando…");syncNow(false);publishMenuOnStartup().catch(e=>console.error("Publicación menú",e));pullOrderActivity().catch(e=>console.error("Actividad web",e))}else setSyncStatus("off","Sin conexión");if(syncTimersStarted)return;syncTimersStarted=true;setInterval(()=>syncNow(false),5000);setInterval(()=>publishMenuOnStartup().catch(e=>console.error("Reintento menú",e)),60000);setInterval(()=>pullOrderActivity().catch(e=>console.error("Actividad web",e)),5000)}
 
 window.addEventListener("beforeunload",()=>{window.desktopAPI.setData(state)});
