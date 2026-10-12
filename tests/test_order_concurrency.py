@@ -8,6 +8,8 @@ import sqlite3
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
+from time import perf_counter
 from pathlib import Path
 from uuid import uuid4
 
@@ -109,6 +111,39 @@ class PedidosSimultaneosTest(unittest.TestCase):
         )
         ids = [data["id"] for _, data in results]
         self.assertEqual(len(set(ids)), 1)
+
+    def test_05_siete_clientes_simultaneos(self):
+        """Siete pedidos reales al endpoint Flask, todos parten al mismo instante."""
+        tokens = [str(uuid4()) for _ in range(7)]
+        starting_gate = Barrier(7, timeout=10)
+
+        def place_order(token):
+            starting_gate.wait()
+            return self.submit_web(token)
+
+        before = self.count()
+        start = perf_counter()
+        with ThreadPoolExecutor(max_workers=7) as pool:
+            results = list(pool.map(place_order, tokens))
+        elapsed = perf_counter() - start
+
+        self.assertTrue(
+            all(status == 200 for status, _ in results),
+            "No se confirmaron los siete pedidos: " + repr(results),
+        )
+        self.assertEqual(self.count() - before, 7)
+        with sqlite3.connect(self.db_path) as conn:
+            stored = [
+                conn.execute(
+                    "SELECT id FROM pedidos WHERE order_token=?", (token,)
+                ).fetchone() for token in tokens
+            ]
+        self.assertTrue(all(row is not None for row in stored))
+        self.assertEqual(len({row[0] for row in stored}), 7)
+        print(
+            "\\nSIMULACION DE SIETE CLIENTES: "
+            f"7 confirmados; 0 fallos; 0 duplicados; {elapsed:.3f} s"
+        )
 
     def test_04_listado_es_consistente(self):
         with self.app.test_client() as client:
