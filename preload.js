@@ -1,6 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('desktopAPI', {
+  getAppInfo: () => ipcRenderer.invoke('app:info'),
   getData: () => ipcRenderer.invoke('data:get'),
   getDeviceId: () => ipcRenderer.invoke('device:id'),
   setData: (data) => ipcRenderer.invoke('data:set', data),
