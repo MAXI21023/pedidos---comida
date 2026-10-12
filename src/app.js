@@ -222,8 +222,8 @@ async function setOrderStatus(id,val){
   await openWhatsAppById(id);
  }
 }
-async function setPaid(id,val){const o=state.orders.find(x=>String(x.id)===String(id));if(!o)return;o.paid=val==="true";o.paidAt=o.paid?new Date().toISOString():null;await persist();renderOrders();renderBadges();renderStats();if(o.paid)await window.desktopAPI.notify("Pedido pagado",`Pedido #${o.number} · ${o.client} · ${money(o.total)}`);await syncOrderToServer(o)}
-async function setDelivered(id,val){const o=state.orders.find(x=>String(x.id)===String(id));if(!o)return;o.delivered=val==="true";o.deliveredAt=o.delivered?new Date().toISOString():null;if(o.delivered)o.status="Entregado";await persist();renderOrders();renderBadges();renderStats();if(o.delivered)await window.desktopAPI.notify("Pedido entregado",`Pedido #${o.number} · ${o.client}`);await syncOrderToServer(o)}
+async function setPaid(id,val){const o=state.orders.find(x=>String(x.id)===String(id));if(!o)return;o.paid=val==="true";o.paidAt=o.paid?new Date().toISOString():null;o.syncPending=true;await persist();renderOrders();renderBadges();renderStats();if(o.paid)await window.desktopAPI.notify("Pedido pagado",`Pedido #${o.number} · ${o.client} · ${money(o.total)}`);await syncOrderToServer(o)}
+async function setDelivered(id,val){const o=state.orders.find(x=>String(x.id)===String(id));if(!o)return;o.delivered=val==="true";o.deliveredAt=o.delivered?new Date().toISOString():null;if(o.delivered)o.status="Entregado";o.syncPending=true;await persist();renderOrders();renderBadges();renderStats();if(o.delivered)await window.desktopAPI.notify("Pedido entregado",`Pedido #${o.number} · ${o.client}`);await syncOrderToServer(o)}
 async function deleteOrder(id){
  const o=state.orders.find(x=>String(x.id)===String(id));
  if(!o||!confirm("¿Eliminar definitivamente el pedido #"+o.number+"?"))return;
@@ -351,7 +351,9 @@ async function validateLicense(){
  if(!state.settings.sessionToken){renderLicenseStatus();return false}
  const res=await apiCall("/api/license/status");
  if(res.ok){state.settings.licenseActive=true;state.settings.businessId=res.data.business_id||state.settings.businessId;state.settings.licensedBusiness=res.data.business_name||state.settings.licensedBusiness;await persist();renderLicenseStatus();return true}
- state.settings.licenseActive=false;if(res.status===401)state.settings.sessionToken="";await persist();renderLicenseStatus();return false
+ // Una caída temporal no debe desactivar la licencia guardada.
+ if(res.status!==401){renderLicenseStatus();return false}
+ state.settings.licenseActive=false;state.settings.sessionToken="";await persist();renderLicenseStatus();return false
 }
 function renderLicenseStatus(){
  const box=document.getElementById("licenseStatus"),input=document.getElementById("licenseKey");
@@ -367,11 +369,15 @@ function remoteToLocal(r){
 async function pullRemoteOrders(showFeedback=false){
  const res=await apiCall("/api/desktop/orders");
  if(!res.ok){setSyncStatus("off",res.error||"Sin conexión");if(showFeedback)alert("No se pudo sincronizar: "+(res.error||res.status));return false}
- const rows=Array.isArray(res.data)?res.data:[],first=!state.settings.syncInitialized;let added=0;
+ if(!Array.isArray(res.data)){
+  setSyncStatus("warn","Respuesta de pedidos inválida. No se modificó el historial.");
+  return false;
+ }
+ const rows=res.data,first=!state.settings.syncInitialized;let added=0;
  for(const r of rows.slice().reverse()){
   try{
   const found=state.orders.find(o=>r.client_id&&String(o.id)===String(r.client_id)) || state.orders.find(o=>o.remoteId!=null&&Number(o.remoteId)===Number(r.id)&&!String(o.id).startsWith("remote-"));
-  if(found){const fresh=remoteToLocal(r);const keepLocal=Boolean(found.statusChangedAt);Object.assign(found,{remoteId:r.id,client:fresh.client,phone:fresh.phone,delivery:fresh.delivery,payment:fresh.payment,address:fresh.address,notes:fresh.notes,items:fresh.items,total:fresh.total,cost:fresh.cost,profit:fresh.profit,tip:found.tip??fresh.tip,paid:keepLocal?found.paid:fresh.paid,delivered:keepLocal?found.delivered:fresh.delivered,status:keepLocal?found.status:fresh.status})}
+  if(found){const fresh=remoteToLocal(r);const keepLocal=Boolean(found.syncPending);Object.assign(found,{remoteId:r.id,client:fresh.client,phone:fresh.phone,delivery:fresh.delivery,payment:fresh.payment,address:fresh.address,notes:fresh.notes,items:fresh.items,total:fresh.total,cost:fresh.cost,profit:fresh.profit,tip:found.tip??fresh.tip,paid:keepLocal?found.paid:fresh.paid,delivered:keepLocal?found.delivered:fresh.delivered,status:keepLocal?found.status:fresh.status})}
   else{const fresh=remoteToLocal(r);state.orders.unshift(fresh);added++;if(!first){try{await window.desktopAPI.notify("Nuevo pedido web",`Pedido #${fresh.number} · ${fresh.client} · ${money(fresh.total)}`)}catch(e){console.error("Notificación de pedido",e)}}}
   }catch(e){console.error("Error al procesar pedido web",r?.id,e)}
  }
@@ -408,8 +414,23 @@ async function pushProducts(showFeedback=false){
 async function syncOrderToServer(o){
  if(!o?.remoteId||!syncConfigured())return false;
  const res=await apiCall("/api/desktop/orders/"+o.remoteId,"PATCH",{estado:o.status,pagado:Boolean(o.paid)});
- if(!res.ok){setSyncStatus("warn","Cambio pendiente de sincronizar");return false}
- setSyncStatus("on","Sincronizado");return true
+ if(!res.ok){
+  o.syncPending=true;
+  await persist();
+  setSyncStatus("warn","Cambios guardados en Mac · pendientes de enviar a Render");
+  return false;
+ }
+ o.syncPending=false;
+ await persist();
+ setSyncStatus("on","Cambios sincronizados");
+ return true;
+}
+async function flushPendingOrderUpdates(){
+ const pending=state.orders.filter(o=>o.remoteId&&o.syncPending);
+ for(const o of pending){
+  if(!await syncOrderToServer(o))return false;
+ }
+ return true;
 }
 let activityLastId=Number(localStorage.getItem("activityLastId")||0),draftActivities=new Map();
 function activeDrafts(){
@@ -450,15 +471,63 @@ async function pullOrderActivity(){
  if(box){box.querySelectorAll(".draft-activity").forEach(el=>el.remove());const drafts=activeDrafts();if(drafts.length){const html=drafts.map(a=>`<div class="order draft-activity" style="border:2px solid #f0b429;background:#fffaf0"><b>🟡 PEDIDO EN PROCESO</b><div class="smalltxt">${escapeHtml((a.cliente||"Cliente").trim()||"Cliente")}</div><span class="status warn">ARMANDO PEDIDO…</span></div>`).join("");box.insertAdjacentHTML("afterbegin",html)}}
 }
 let syncBusy=false;let syncTimersStarted=false;let menuStartupPublishDone=false;let localMenuHasSavedProducts=false;
+let syncRetryAt=0,syncFailureCount=0,activityBusy=false;
+function scheduleSyncRetry(){
+ syncFailureCount=Math.min(syncFailureCount+1,5);
+ const wait=Math.min(60000,5000*Math.pow(2,syncFailureCount));
+ syncRetryAt=Date.now()+wait;
+ setSyncStatus("warn","Render no disponible · Reintento en "+Math.round(wait/1000)+"s · Pedidos seguros en Mac");
+ return false;
+}
+async function pollOrderActivitySafely(){
+ if(Date.now()<syncRetryAt||activityBusy)return;
+ activityBusy=true;
+ try{await pullOrderActivity()}finally{activityBusy=false}
+}
 async function publishMenuOnStartup(){
+ if(Date.now()<syncRetryAt)return;
  if(menuStartupPublishDone || !localMenuHasSavedProducts || !syncConfigured() || !state.products.some(p=>p.active))return;
  menuStartupPublishDone=true;
  const ok=await pushProducts(false);
  if(!ok){menuStartupPublishDone=false;console.warn("Menú web pendiente de publicación");}
 }
 
-async function syncNow(showFeedback=false){if(syncBusy)return false;if(!syncConfigured()){setSyncStatus("off","Falta clave API de Render");if(showFeedback)alert("Configura la URL y la misma clave API que está en Render.");return false}syncBusy=true;try{const ok=await pullRemoteOrders(showFeedback);if(ok){await pushLocalOrders();await loadDailyStock()}return ok}catch(e){setSyncStatus("off","Error recibiendo pedidos: "+(e?.message||e));if(showFeedback)alert("Error recibiendo pedidos: "+(e?.message||e));return false}finally{syncBusy=false}}
-function startServerSync(){if(syncConfigured()){setSyncStatus("warn","Conectando…");syncNow(false);publishMenuOnStartup().catch(e=>console.error("Publicación menú",e));pullOrderActivity().catch(e=>console.error("Actividad web",e))}else setSyncStatus("off","Sin conexión");if(syncTimersStarted)return;syncTimersStarted=true;setInterval(()=>syncNow(false),5000);setInterval(()=>publishMenuOnStartup().catch(e=>console.error("Reintento menú",e)),60000);setInterval(()=>pullOrderActivity().catch(e=>console.error("Actividad web",e)),5000)}
+async function syncNow(showFeedback=false){
+ if(syncBusy)return false;
+ if(!syncConfigured()){
+  setSyncStatus("off","Falta clave API de Render");
+  if(showFeedback)alert("Configura la URL y la misma clave API que está en Render.");
+  return false;
+ }
+ if(!showFeedback&&Date.now()<syncRetryAt)return false;
+ syncBusy=true;
+ try{
+  if(!await pullRemoteOrders(showFeedback))return scheduleSyncRetry();
+  syncFailureCount=0;syncRetryAt=0;
+  if(!await pushLocalOrders())return scheduleSyncRetry();
+  if(!await flushPendingOrderUpdates())return scheduleSyncRetry();
+  await loadDailyStock();
+  return true;
+ }catch(e){
+  console.error("Error al sincronizar pedidos",e);
+  if(showFeedback)alert("Error recibiendo pedidos: "+(e?.message||e));
+  return scheduleSyncRetry();
+ }finally{syncBusy=false}
+}
+function startServerSync(){
+ if(syncConfigured()){
+  syncRetryAt=0;
+  setSyncStatus("warn","Conectando…");
+  syncNow(false);
+  publishMenuOnStartup().catch(e=>console.error("Publicación menú",e));
+  pollOrderActivitySafely().catch(e=>console.error("Actividad web",e));
+ }else setSyncStatus("off","Sin conexión");
+ if(syncTimersStarted)return;
+ syncTimersStarted=true;
+ setInterval(()=>syncNow(false),5000);
+ setInterval(()=>publishMenuOnStartup().catch(e=>console.error("Reintento menú",e)),60000);
+ setInterval(()=>pollOrderActivitySafely().catch(e=>console.error("Actividad web",e)),5000);
+}
 
 window.addEventListener("beforeunload",()=>{window.desktopAPI.setData(state)});
 setInterval(()=>persist(),15000);
