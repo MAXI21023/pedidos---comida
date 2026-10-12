@@ -314,7 +314,25 @@ async function exportOrdersCSV(){const headers=["N°","Fecha","Cliente","Teléfo
 
 
 function syncConfigured(){return Boolean(state.settings.serverUrl&&state.settings.apiKey)}
-function setSyncStatus(kind,text){const b=document.getElementById("syncBadge"),m=document.getElementById("syncMessage");if(b){b.classList.remove("sync-on","sync-warn","sync-off");b.classList.add(kind==="on"?"sync-on":kind==="warn"?"sync-warn":"sync-off");b.textContent=(kind==="on"?"☁️ ":"⚠️ ")+text}if(m)m.textContent=text}
+function safeSyncMessage(value){
+ const raw=String(value??"Sin conexión");
+ const htmlResponse=/<!doctype|<html|<head|<body|<style|<script|<title/i.test(raw);
+ if(htmlResponse){
+  const code=raw.match(/(?:<title>[^<]*|\bHTTP\s*|\berror\s*)(50[0234]|52[024])\b/i)?.[1]||raw.match(/\b(502|503|504|500|520|522|524)\b/)?.[1];
+  return "Servidor Render temporalmente no disponible"+(code?" (HTTP "+code+")":"")+". Se reintentará automáticamente.";
+ }
+ return raw.length>180?raw.slice(0,177)+"…":raw;
+}
+function setSyncStatus(kind,text){
+ const b=document.getElementById("syncBadge"),m=document.getElementById("syncMessage"),message=safeSyncMessage(text);
+ if(b){
+  b.classList.remove("sync-on","sync-warn","sync-off");
+  b.classList.add(kind==="on"?"sync-on":kind==="warn"?"sync-warn":"sync-off");
+  b.style.maxWidth="340px";b.style.overflow="hidden";b.style.textOverflow="ellipsis";b.style.whiteSpace="nowrap";b.title=message;
+  b.textContent=(kind==="on"?"☁️ ":"⚠️ ")+message;
+ }
+ if(m)m.textContent=message;
+}
 async function apiCall(path,method="GET",body=null){if(!syncConfigured())return{ok:false,status:0,error:"Activa la licencia o configura la sincronización."};return window.desktopAPI.serverRequest({baseUrl:state.settings.serverUrl,apiKey:state.settings.apiKey,sessionToken:state.settings.sessionToken,path,method,body})}
 async function activateLicense(){
  const input=document.getElementById("licenseKey"),msg=document.getElementById("licenseMessage");
