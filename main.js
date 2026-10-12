@@ -32,27 +32,58 @@ function defaultData() {
   return { products: [], orders: [], settings: { businessName: 'Mi Hamburguesería' } };
 }
 
-function readData() {
-  try {
-    const file = dataFile();
-    if (!fs.existsSync(file)) return defaultData();
-    return JSON.parse(fs.readFileSync(file, 'utf8'));
-  } catch (e) {
-    try {
-      const backup=dataFile()+'.bak';
-      if(fs.existsSync(backup)) return JSON.parse(fs.readFileSync(backup,'utf8'));
-    } catch {}
-    return defaultData();
-  }
+function validData(data) {
+  return data && typeof data === 'object' && !Array.isArray(data) &&
+    Array.isArray(data.products) && Array.isArray(data.orders);
 }
-
+function readValidated(file) {
+  const value=JSON.parse(fs.readFileSync(file,'utf8'));
+  if (!validData(value)) throw new Error('Estructura de datos inválida');
+  return value;
+}
+function readData() {
+  const file=dataFile();
+  const candidates=[file,file+'.bak',...Array.from({length:10},(_,i)=>file+'.bak.'+(i+1))];
+  const existing=candidates.filter(p=>fs.existsSync(p));
+  if (!existing.length) return defaultData();
+  for (const candidate of existing) {
+    try {
+      const value=readValidated(candidate);
+      if (candidate!==file) {
+        console.error('Datos recuperados desde respaldo:',candidate);
+        dialog.showMessageBox({type:'warning',title:'Respaldo recuperado',
+          message:'Se recuperaron los datos desde una copia de seguridad.',
+          detail:'Revisa tus pedidos antes de continuar. Respaldo: '+candidate});
+      }
+      return value;
+    } catch(e) { console.error('Archivo de datos no válido:',candidate,e); }
+  }
+  throw new Error('No se pudieron recuperar los datos. Se bloquea el inicio para evitar sobrescribir tus pedidos. Carpeta: '+path.dirname(file));
+}
 function writeData(data) {
+  if (!validData(data)) throw new Error('Guardado bloqueado: datos inválidos');
   const file=dataFile(),dir=path.dirname(file),tmp=file+'.tmp',backup=file+'.bak';
   fs.mkdirSync(dir,{recursive:true});
+  if (fs.existsSync(file)) {
+    // Nunca sobrescribir un archivo dañado ni destruir los respaldos válidos.
+    readValidated(file);
+    for(let i=10;i>=2;i--){
+      const prev= i===2?backup+'.1':backup+'.'+(i-1);
+      const next=backup+'.'+i;
+      if(fs.existsSync(prev)) fs.copyFileSync(prev,next);
+    }
+    if(fs.existsSync(backup)) fs.copyFileSync(backup,backup+'.1');
+    fs.copyFileSync(file,backup);
+  }
   const json=JSON.stringify(data,null,2);
   fs.writeFileSync(tmp,json,'utf8');
-  if(fs.existsSync(file)){try{fs.copyFileSync(file,backup)}catch{}}
-  fs.renameSync(tmp,file);
+  try {
+    readValidated(tmp);
+    fs.renameSync(tmp,file);
+  } catch(e) {
+    try{fs.unlinkSync(tmp)}catch{}
+    throw e;
+  }
   return {ok:true,file};
 }
 
