@@ -121,6 +121,21 @@ class PedidosSimultaneosTest(unittest.TestCase):
         self.assertEqual(len(orders), self.count())
         self.assertTrue(all(o["items"] for o in orders))
 
+    def test_05_cien_pedidos_concurrentes_sin_duplicados(self):
+        """Simula 100 clientes independientes con base SQLite temporal."""
+        tokens = [str(uuid4()) for _ in range(100)]
+        with ThreadPoolExecutor(max_workers=12) as pool:
+            results = list(pool.map(self.submit_web, tokens))
+        self.assertTrue(all(status == 200 for status, _ in results), results)
+        with sqlite3.connect(self.db_path) as conn:
+            placeholders = ",".join("?" for _ in tokens)
+            rows = conn.execute(
+                "SELECT order_token, COUNT(*) FROM pedidos WHERE order_token IN (" +
+                placeholders + ") GROUP BY order_token", tokens
+            ).fetchall()
+        self.assertEqual(len(rows), 100)
+        self.assertTrue(all(n == 1 for _, n in rows))
+
 
 if __name__ == "__main__":
     unittest.main()
