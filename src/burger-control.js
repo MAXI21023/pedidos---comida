@@ -22,6 +22,14 @@
       <div class="stat"><span>Más antiguo sin entregar</span><b id="burgerOldest">—</b></div>
     </div>
     <div id="burgerAdvice" class="notice topgap" role="status">Cargando métricas…</div>
+    <div class="topgap"><h3>💬 Asistente del negocio</h3>
+      <div class="muted">Consulta tus datos locales, sin enviarlos a servicios externos.</div>
+      <form id="burgerQuestionForm" class="row wrap topgap">
+        <input id="burgerQuestion" style="flex:1;min-width:200px" aria-label="Pregunta al asistente" placeholder="Ej.: ¿Cuánto gané hoy?" required>
+        <button class="primary" type="submit">Consultar</button>
+      </form>
+      <div id="burgerAnswer" class="notice topgap" role="status">Pregúntame por ventas, ganancias, pedidos, pendientes o tiempos de entrega.</div>
+    </div>
     <div class="smalltxt topgap">Utilidad bruta estimada = venta menos costo registrado de productos; no descuenta arriendo, sueldos ni otros gastos fijos. Los tiempos se calculan únicamente cuando existen marcas de recepción y entrega.</div>`;
   function beep() {
     if (!audioContext) return;
@@ -51,6 +59,25 @@
         root.querySelector('#burgerSoundButton').textContent='🔔 Sonido activo';
       } catch(e) { root.querySelector('#burgerSoundButton').textContent='Sonido no disponible'; }
     },{once:true});
+    root.querySelector('#burgerQuestionForm').addEventListener('submit', event => {
+      event.preventDefault();
+      const question = root.querySelector('#burgerQuestion').value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+      const all = (typeof state!=='undefined' && Array.isArray(state.orders)) ? state.orders : [];
+      const today = dayKey(new Date());
+      const daily = all.filter(o=> { const t=milliseconds(o.createdAt);return t!==null && dayKey(new Date(t))===today; });
+      const sales = daily.reduce((v,o)=>v+Number(o.total||0),0);
+      const costs = daily.reduce((v,o)=>v+(typeof currentOrderCost==='function'?Number(currentOrderCost(o)||0):Number(o.cost||0)),0);
+      const pending = all.filter(o=>!o.delivered);
+      const completed = daily.map(o=> {const a=milliseconds(o.createdAt),b=milliseconds(o.deliveredAt);return a!==null&&b!==null&&b>=a?(b-a)/60000:null;}).filter(x=>x!==null);
+      let answer;
+      if (/gan|utilidad|beneficio|margen/.test(question)) answer='La utilidad bruta estimada de hoy es '+moneyCL(sales-costs)+' (ventas '+moneyCL(sales)+' menos costos registrados '+moneyCL(costs)+'). No incluye gastos fijos.';
+      else if (/vend|venta|ingreso|factur/.test(question)) answer='Las ventas registradas hoy suman '+moneyCL(sales)+' en '+daily.length+' pedidos. No significa necesariamente que ya estén cobradas.';
+      else if (/demor|tiempo|entrega|rapide|promedio/.test(question)) answer=completed.length?'El tiempo promedio desde recepción hasta entrega de los '+completed.length+' pedidos entregados hoy con fechas válidas es '+Math.round(completed.reduce((a,b)=>a+b,0)/completed.length)+' minutos.':'No hay suficientes pedidos entregados hoy con fechas válidas para calcular el tiempo promedio.';
+      else if (/pend|atras|espera/.test(question)) answer='Hay '+pending.length+' pedidos sin marcar como entregados en el historial.';
+      else if (/pedido|orden|cuanto/.test(question)) answer='Hoy se registraron '+daily.length+' pedidos y hay '+pending.length+' sin marcar como entregados.';
+      else answer='Puedo responder sobre ganancias, ventas, pedidos pendientes y tiempo promedio de entrega. Prueba con: ¿Cuánto vendí hoy?';
+      root.querySelector('#burgerAnswer').textContent=answer;
+    });
   }
   function render() {
     if (typeof state === 'undefined' || !Array.isArray(state.orders)) return;
