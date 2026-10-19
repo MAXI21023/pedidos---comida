@@ -109,11 +109,12 @@ function readValidated(file) {
 
 // Carpeta unica para la aplicacion instalada y la ejecutada con "npm start".
 // El nombre anterior dependia del modo de inicio de Electron.
-const STABLE_DATA_FOLDER='cl.gestorpedidos.desktop';
+const BETA_INSTALL=String(app.getName()).includes('Beta');
+const STABLE_DATA_FOLDER=BETA_INSTALL?'cl.gestorpedidos.desktop.beta':'cl.gestorpedidos.desktop';
 function stableStoragePaths() {
   const root=app.getPath('appData');
   const shared=path.join(root,STABLE_DATA_FOLDER);
-  const directories=[shared,app.getPath('userData'),
+  const directories=BETA_INSTALL?[shared]:[shared,app.getPath('userData'),
     path.join(root,'Gestor de Pedidos'),
     path.join(root,'gestor-pedidos-whatsapp'),
     path.join(root,'Gestor-de-Pedidos'),
