@@ -9,6 +9,7 @@ on:
       - 'src/**'
       - 'package.json'
       - 'package-lock.json'
+      - 'tests/**'
   workflow_dispatch:
 jobs:
   beta-mac:
