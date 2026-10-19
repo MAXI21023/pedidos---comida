@@ -109,7 +109,7 @@ function readValidated(file) {
 
 // Carpeta unica para la aplicacion instalada y la ejecutada con "npm start".
 // El nombre anterior dependia del modo de inicio de Electron.
-const BETA_INSTALL=String(app.getName()).includes('Beta');
+const BETA_INSTALL=typeof app.getName==='function' && String(app.getName()).includes('Beta');
 const STABLE_DATA_FOLDER=BETA_INSTALL?'cl.gestorpedidos.desktop.beta':'cl.gestorpedidos.desktop';
 function stableStoragePaths() {
   const root=app.getPath('appData');
