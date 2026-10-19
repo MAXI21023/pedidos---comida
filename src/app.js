@@ -251,7 +251,7 @@ async function setOrderStatus(id,val){
   return;
  }
  o.status=val;o.statusChangedAt=Date.now();
- if(val==="Entregado"){o.delivered=true;o.deliveredAt=new Date().toISOString()}
+ if(val==="Entregado"){o.delivered=true;o.deliveredAt=o.deliveredAt||new Date().toISOString()}
  await persist();renderOrders();renderBadges();renderStats();
  if(o.remoteId&&val==="Confirmado")await loadDailyStock();
  if(["Confirmado","Preparando","Listo","En reparto"].includes(val)){
@@ -261,7 +261,7 @@ async function setOrderStatus(id,val){
  }
 }
 async function setPaid(id,val){const o=state.orders.find(x=>String(x.id)===String(id));if(!o)return;o.paid=val==="true";o.paidAt=o.paid?new Date().toISOString():null;o.syncPending=true;await persist();renderOrders();renderBadges();renderStats();if(o.paid)await window.desktopAPI.notify("Pedido pagado",`Pedido #${o.number} · ${o.client} · ${money(o.total)}`);await syncOrderToServer(o)}
-async function setDelivered(id,val){const o=state.orders.find(x=>String(x.id)===String(id));if(!o)return;o.delivered=val==="true";o.deliveredAt=o.delivered?new Date().toISOString():null;if(o.delivered)o.status="Entregado";o.syncPending=true;await persist();renderOrders();renderBadges();renderStats();if(o.delivered)await window.desktopAPI.notify("Pedido entregado",`Pedido #${o.number} · ${o.client}`);await syncOrderToServer(o)}
+async function setDelivered(id,val){const o=state.orders.find(x=>String(x.id)===String(id));if(!o)return;o.delivered=val==="true";o.deliveredAt=o.delivered?(o.deliveredAt||new Date().toISOString()):null;if(o.delivered)o.status="Entregado";o.syncPending=true;await persist();renderOrders();renderBadges();renderStats();if(o.delivered)await window.desktopAPI.notify("Pedido entregado",`Pedido #${o.number} · ${o.client}`);await syncOrderToServer(o)}
 async function deleteOrder(id){
  const o=state.orders.find(x=>String(x.id)===String(id));
  if(!o||!confirm("¿Eliminar definitivamente el pedido #"+o.number+"?"))return;
@@ -442,6 +442,8 @@ async function pullRemoteOrders(showFeedback=false){
      paid:keepLocal?found.paid:fresh.paid,
      delivered:keepLocal?found.delivered:fresh.delivered,
      status:keepLocal?found.status:fresh.status};
+    // Preservar marca de entrega local al sincronizar; no inventar fechas para entregas históricas.
+    if(!keepLocal && !fresh.delivered && found.deliveredAt)patch.deliveredAt=null;
     const changed=Object.entries(patch).some(([k,v])=>k==="items"
       ? JSON.stringify(found.items||[])!==JSON.stringify(v)
       : found[k]!==v);
