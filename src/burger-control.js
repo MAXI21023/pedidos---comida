@@ -4,7 +4,8 @@
   const moneyCL = n => '$' + Math.round(n).toLocaleString('es-CL');
   const dayKey = date => new Intl.DateTimeFormat('en-CA', {timeZone: CL_TZ, year:'numeric', month:'2-digit', day:'2-digit'}).format(date);
   const milliseconds = value => { const d = Date.parse(value || ''); return Number.isFinite(d) ? d : null; };
-  let known = null, audioContext = null;
+  let known = null, audioContext = null, lastAlert = '', lastAlertAt = 0;
+  const alertThresholdMinutes = 30;
   const root = document.createElement('section');
   root.id = 'burgerControlPanel';
   root.className = 'card';
@@ -85,7 +86,11 @@
     const identifiers = new Set(all.map(o=>String(o.remoteId ?? o.id)));
     if (known !== null) {
       const newlyReceived = all.filter(o=>o.remoteId != null && !known.has(String(o.remoteId)) && !o.delivered);
-      if (newlyReceived.length) { beep(); root.querySelector('#burgerAdvice').textContent='🔔 '+newlyReceived.length+' pedido(s) nuevo(s) recibido(s)'; }
+      if (newlyReceived.length) {
+        beep();
+        lastAlert = '🔔 '+newlyReceived.length+' pedido(s) nuevo(s) recibido(s)';
+        lastAlertAt = Date.now();
+      }
     }
     known=identifiers;
     const now=new Date(),today=dayKey(now);
@@ -96,11 +101,13 @@
     const pending=all.filter(o=>!o.delivered);
     const age=pending.map(o=>milliseconds(o.createdAt)).filter(n=>n!==null);
     const oldest=age.length?Math.max(0,Math.round((Date.now()-Math.min(...age))/60000)):null;
+    const delayed=pending.filter(o=>{const t=milliseconds(o.createdAt);return t!==null && Date.now()-t>=alertThresholdMinutes*60000;}).length;
     const values={burgerSales:moneyCL(sum),burgerProfit:moneyCL(sum-cost),burgerCount:String(todays.length),burgerTime:durations.length?Math.round(durations.reduce((a,b)=>a+b,0)/durations.length)+' min':'Sin datos',burgerPending:String(pending.length),burgerOldest:oldest===null?'—':oldest+' min'};
     for(const [id,value] of Object.entries(values)){const el=root.querySelector('#'+id);if(el)el.textContent=value;}
-    if (!root.querySelector('#burgerAdvice').textContent.startsWith('🔔')) {
-      root.querySelector('#burgerAdvice').textContent=oldest!==null&&oldest>=30?'⚠️ Hay un pedido pendiente hace '+oldest+' minutos. Revisa la cola.':'Indicadores actualizados. Los tiempos requieren pedidos marcados como entregados.';
-    }
+    root.querySelector('#burgerAdvice').textContent = Date.now()-lastAlertAt<15000
+      ? lastAlert
+      : delayed ? '⚠️ '+delayed+' pedido(s) llevan 30 minutos o más sin marcarse como entregados. Revisa la cola.'
+      : 'Indicadores actualizados. Los tiempos requieren pedidos marcados como entregados.';
   }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',mount,{once:true});else mount();
   setInterval(render,5000); render();
