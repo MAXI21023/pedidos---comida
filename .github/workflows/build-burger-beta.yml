@@ -1,0 +1,47 @@
+name: Compilar Burger Control Beta Mac M1
+on:
+  push:
+    branches: [feature/burger-control-ia]
+    paths:
+      - '.github/workflows/build-burger-beta.yml'
+      - 'main.js'
+      - 'preload.js'
+      - 'src/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tests/**'
+  workflow_dispatch:
+jobs:
+  beta-mac:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Instalar dependencias
+        run: npm ci
+      - name: Probar persistencia y respaldos
+        run: node --test tests/test_desktop_persistence.cjs tests/test_backup_script.cjs tests/test_beta_guards.cjs
+      - name: Separar aplicación beta de aplicación estable
+        run: |
+          node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('package.json','utf8')); p.productName='Burger Control Beta'; p.build.productName='Burger Control Beta'; p.build.appId='cl.gestorpedidos.desktop.beta'; p.build.mac={...(p.build.mac||{}),identity:'-'}; p.build.artifactName='Burger-Control-Beta-\${version}-\${arch}.\${ext}'; fs.writeFileSync('package.json',JSON.stringify(p,null,2))"
+      - name: Crear instalador de prueba para Mac M1
+        run: npx electron-builder --mac dmg zip --arm64 --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Verificar firma y estructura de la aplicación
+        run: |
+          APP="dist/mac-arm64/Burger Control Beta.app"
+          test -d "$APP/Contents/Resources" || { echo "Falta Contents/Resources"; exit 1; }
+          codesign --verify --deep --strict --verbose=2 "$APP"
+      - name: Publicar artefactos privados de prueba
+        uses: actions/upload-artifact@v4
+        with:
+          name: Burger-Control-Beta-Mac-M1
+          path: |
+            dist/*.dmg
+            dist/*.zip
+          if-no-files-found: error
+          retention-days: 7
