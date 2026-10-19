@@ -8,7 +8,7 @@ const code=fs.readFileSync(path.join(__dirname,'..','src','app.js'),'utf8');
 const start=code.indexOf('function betaServerAllowed(url){');
 const end=code.indexOf('function safeSyncMessage(',start);
 assert.ok(start>=0&&end>start,'No se encontró guardia de servidor de prueba');
-const sandbox={state:{settings:{serverUrl:'',apiKey:'clave-prueba'}}};
+const sandbox={URL,state:{settings:{serverUrl:'',apiKey:'clave-prueba'}}};
 vm.createContext(sandbox);
 vm.runInContext(code.slice(start,end),sandbox);
 test('la beta bloquea servidores de produccion',()=>{
