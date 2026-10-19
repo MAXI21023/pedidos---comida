@@ -252,6 +252,7 @@ async function setOrderStatus(id,val){
  }
  o.status=val;o.statusChangedAt=Date.now();
  if(val==="Entregado"){o.delivered=true;o.deliveredAt=o.deliveredAt||new Date().toISOString()}
+ else if(o.delivered){o.delivered=false;o.deliveredAt=null}
  await persist();renderOrders();renderBadges();renderStats();
  if(o.remoteId&&val==="Confirmado")await loadDailyStock();
  if(["Confirmado","Preparando","Listo","En reparto"].includes(val)){
@@ -261,7 +262,7 @@ async function setOrderStatus(id,val){
  }
 }
 async function setPaid(id,val){const o=state.orders.find(x=>String(x.id)===String(id));if(!o)return;o.paid=val==="true";o.paidAt=o.paid?new Date().toISOString():null;o.syncPending=true;await persist();renderOrders();renderBadges();renderStats();if(o.paid)await window.desktopAPI.notify("Pedido pagado",`Pedido #${o.number} · ${o.client} · ${money(o.total)}`);await syncOrderToServer(o)}
-async function setDelivered(id,val){const o=state.orders.find(x=>String(x.id)===String(id));if(!o)return;o.delivered=val==="true";o.deliveredAt=o.delivered?(o.deliveredAt||new Date().toISOString()):null;if(o.delivered)o.status="Entregado";o.syncPending=true;await persist();renderOrders();renderBadges();renderStats();if(o.delivered)await window.desktopAPI.notify("Pedido entregado",`Pedido #${o.number} · ${o.client}`);await syncOrderToServer(o)}
+async function setDelivered(id,val){const o=state.orders.find(x=>String(x.id)===String(id));if(!o)return;o.delivered=val==="true";o.deliveredAt=o.delivered?(o.deliveredAt||new Date().toISOString()):null;if(o.delivered)o.status="Entregado";else if(o.status==="Entregado")o.status="Nuevo";o.syncPending=true;await persist();renderOrders();renderBadges();renderStats();if(o.delivered)await window.desktopAPI.notify("Pedido entregado",`Pedido #${o.number} · ${o.client}`);await syncOrderToServer(o)}
 async function deleteOrder(id){
  const o=state.orders.find(x=>String(x.id)===String(id));
  if(!o||!confirm("¿Eliminar definitivamente el pedido #"+o.number+"?"))return;
@@ -362,7 +363,14 @@ async function importBackup(){
 async function exportOrdersCSV(){const headers=["N°","Fecha","Cliente","Teléfono","Total","Costo","Utilidad","Pagado","Entregado","Estado","Entrega","Pago","Productos"],rows=state.orders.map(o=>[o.number,o.date,o.client,o.phone,o.total,o.cost??0,o.total-(o.cost??0),o.paid?"Sí":"No",o.delivered?"Sí":"No",o.status,o.delivery,o.payment,o.items.map(i=>`${i.qty}x ${i.name}`).join(" | ")]),esc=v=>`"${String(v??"").replace(/"/g,'""')}"`,csv=[headers,...rows].map(r=>r.map(esc).join(";")).join("\n");const ok=await window.desktopAPI.exportCSV(csv);if(ok)alert("CSV exportado.")}
 
 
-function syncConfigured(){return Boolean(state.settings.serverUrl&&state.settings.apiKey)}
+// La Beta solo puede sincronizar con un servidor de prueba local, nunca con Render de producción.
+function betaServerAllowed(url){
+ try{
+  const parsed=new URL(String(url||""));
+  return ["localhost","127.0.0.1","::1"].includes(parsed.hostname) && ["http:","https:"].includes(parsed.protocol);
+ }catch{return false}
+}
+function syncConfigured(){return Boolean(betaServerAllowed(state.settings.serverUrl)&&state.settings.apiKey)}
 function safeSyncMessage(value){
  const raw=String(value??"Sin conexión");
  const htmlResponse=/<!doctype|<html|<head|<body|<style|<script|<title/i.test(raw);
