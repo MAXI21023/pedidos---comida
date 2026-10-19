@@ -22,7 +22,7 @@ jobs:
       - name: Instalar dependencias
         run: npm ci
       - name: Probar persistencia y respaldos
-        run: node --test tests/test_desktop_persistence.cjs tests/test_backup_script.cjs
+        run: node --test tests/test_desktop_persistence.cjs tests/test_backup_script.cjs tests/test_beta_guards.cjs
       - name: Separar aplicación beta de aplicación estable
         run: |
           node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('package.json','utf8')); p.productName='Burger Control Beta'; p.build.productName='Burger Control Beta'; p.build.appId='cl.gestorpedidos.desktop.beta'; p.build.mac={...(p.build.mac||{}),identity:'-'}; p.build.artifactName='Burger-Control-Beta-\${version}-\${arch}.\${ext}'; fs.writeFileSync('package.json',JSON.stringify(p,null,2))"
